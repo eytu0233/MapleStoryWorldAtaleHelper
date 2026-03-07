@@ -1,0 +1,19 @@
+{
+    "keys": {
+        "teleport": "c",
+        "heal": "z",
+        "shining_ray": "x",
+        "holy_symbol": "1",
+        "blessing": "2",
+        "invincible": "3",
+        "magic_guard": "4",
+        "dragon": "a"
+    },
+    "delays": {
+        "shining_ray": 0.6,
+        "teleport": 0.6,
+        "buff": 1.2,
+        "heal": 0.5,
+        "default": 0.1
+    }
+}
