@@ -13,12 +13,14 @@ class BowmasterTask(MapleTask):
         print("BowmasterTask starting")
         while True:
             # 釋放技能 1、2
-            pyautogui.press('1')
+            pyautogui.keyDown('1')
             if self.wait_stop_event(0.5):
                 break
-            pyautogui.press('2')
+            pyautogui.keyUp('1')
+            pyautogui.keyDown('2')
             if self.wait_stop_event(0.5):
                 break
+            pyautogui.keyUp('2')
 
             # 左鍵按一下
             pyautogui.press('left')
