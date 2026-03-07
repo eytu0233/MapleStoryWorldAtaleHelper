@@ -14,9 +14,6 @@ dependencies = [
     "pynput",
     "scapy",
     "websockets",
-    "PyQt5==5.15.10",
-    "pyqt5-qt5==5.15.2",
-    "PyQt5-sip==12.13.0",
 ]
 
 [project.optional-dependencies]
