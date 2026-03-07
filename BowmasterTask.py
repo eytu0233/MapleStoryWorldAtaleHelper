@@ -7,7 +7,7 @@ from MapleTask import MapleTask
 SKILL_INTERVAL = 270
 SKILL1_INTERVAL = 120
 SKILL2_INTERVAL = 60
-MOVE_INTERVAL = 180  # 每 180 秒執行移動
+MOVE_INTERVAL = 30  # 每 180 秒執行掃地
 Z_CHECK_CHUNK = 5  # 每 5 秒檢查一次技能冷卻
 
 
