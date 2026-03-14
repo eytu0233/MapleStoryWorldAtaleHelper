@@ -6,9 +6,9 @@ from MapleTask import MapleTask
 
 
 class MonitorBossAliveTask(MapleTask):
-    def __init__(self, hwnd, notify_func):
+    def __init__(self, hwnd=None, notify_func=None):
         super(MonitorBossAliveTask, self).__init__()
-        self.hwnd = hwnd
+        self.hwnd = hwnd if hwnd is not None else self.detect_hwnd()
         self.notify_func = notify_func
 
     def task(self):

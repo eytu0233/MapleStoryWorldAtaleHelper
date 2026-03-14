@@ -1,8 +1,17 @@
 import threading
 import abc
 
+from GameDetector import get_artale_hwnd
+
 
 class MapleTask(abc.ABC):
+    @staticmethod
+    def detect_hwnd():
+        hwnd = get_artale_hwnd()
+        if hwnd == 0:
+            print("[MapleTask] 找不到 Artale 視窗")
+        return hwnd
+
     def __init__(self):
         self.is_running = False
         self.is_started = False
@@ -34,7 +43,7 @@ class MapleTask(abc.ABC):
         if self.is_started is False:
             self.is_started = True
             self.thread.start()
-            self.start_event_notify()
+        self.start_event_notify()
 
     def stop(self):
         print('MapleTask stop')

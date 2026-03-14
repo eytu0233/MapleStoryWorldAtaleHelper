@@ -6,7 +6,7 @@ from MonitorBossAliveTask import MonitorBossAliveTask
 
 
 class Righter(MapleTask):
-    def __init__(self, hwnd):
+    def __init__(self):
         super(Righter, self).__init__()
 
     def task(self):

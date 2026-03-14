@@ -15,9 +15,9 @@ save_x = -1
 save_y = -1
 
 class SupportTask(MapleTask):
-    def __init__(self, hwnd):
+    def __init__(self, hwnd=None):
         super(SupportTask, self).__init__()
-        self.hwnd = hwnd
+        self.hwnd = hwnd if hwnd is not None else self.detect_hwnd()
         self.back_time = 1.5
 
     def get_actual_width_height(self):

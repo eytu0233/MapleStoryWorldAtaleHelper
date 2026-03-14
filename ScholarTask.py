@@ -6,8 +6,9 @@ from MonitorBossAliveTask import MonitorBossAliveTask
 
 
 class ScholarTask(MapleTask):
-    def __init__(self, hwnd, finder):
+    def __init__(self, finder, hwnd=None):
         super(ScholarTask, self).__init__()
+        hwnd = hwnd if hwnd is not None else self.detect_hwnd()
         self.monitor = MonitorBossAliveTask(hwnd, self.boss_killed_event)
         self.finder = finder
         self.is_boss_event = False

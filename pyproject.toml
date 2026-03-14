@@ -14,6 +14,7 @@ dependencies = [
     "pynput",
     "scapy",
     "websockets",
+    "PyQt5",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +24,11 @@ yolo = [
     "torch",
     "torchvision",
     "torchaudio",
+]
+
+[tool.uv]
+override-dependencies = [
+    "pyqt5-qt5==5.15.2",
 ]
 
 [[tool.uv.index]]

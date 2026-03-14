@@ -19,9 +19,9 @@ Y_OFFSET_SCALE = 0.25
 
 
 class FindBossTask(MapleTask):
-    def __init__(self, hwnd):
+    def __init__(self, hwnd=None):
         super(FindBossTask, self).__init__()
-        self.hwnd = hwnd
+        self.hwnd = hwnd if hwnd is not None else self.detect_hwnd()
         self.found_event = None
         self.boss_task_map = {}
 

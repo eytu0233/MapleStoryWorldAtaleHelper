@@ -9,8 +9,9 @@ from MonitorBossAliveTask import MonitorBossAliveTask
 
 
 class ZombieMushKingTask(MapleTask):
-    def __init__(self, hwnd):
+    def __init__(self, hwnd=None):
         super(ZombieMushKingTask, self).__init__()
+        hwnd = hwnd if hwnd is not None else self.detect_hwnd()
         self.monitor = MonitorBossAliveTask(hwnd, self.boss_killed_event)
         self.finder = FindBossTask(hwnd)
         self.finder.set_found_event(self.start)
