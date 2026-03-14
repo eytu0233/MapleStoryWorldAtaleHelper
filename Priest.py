@@ -59,6 +59,10 @@ class Priest(MapleTask):
         print("[Priest] InitState: process")
         return self._release_skills()
 
+    def _aux_pre(self) -> bool:
+        print("[Priest] AuxState: pre")
+        return self.wait_stop_event(0.5)
+
     def _aux_process(self) -> bool:
         print("[Priest] AuxState: process")
         return self._release_skills()
@@ -123,6 +127,8 @@ class Priest(MapleTask):
                 print(f"[Priest] → {state}")
 
             elif state == State.AUX:
+                if self._aux_pre():
+                    break
                 if self._aux_process():
                     break
                 state = State.ATTACK
