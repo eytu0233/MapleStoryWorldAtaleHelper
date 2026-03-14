@@ -77,7 +77,11 @@ class Priest(MapleTask):
             pyautogui.press('left')
         for _ in range(3):
             pyautogui.press('right')
+        if self.wait_stop_event(0.5):
+            return True
         pyautogui.press('shift')
+        if self.wait_stop_event(0.5):
+            return True
         return False
 
     def _attack_process(self) -> bool:
