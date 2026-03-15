@@ -47,11 +47,11 @@ class Priest(MapleTask):
 
     def _release_skills(self) -> bool:
         """hold '5' → '1' → '2' each 1s. Returns True if stopped."""
-        if self._hold_key('5', 1):
+        if self._hold_key('5', 0.5):
             return True
-        if self._hold_key('1', 1):
+        if self._hold_key('1', 0.5):
             return True
-        if self._hold_key('2', 1):
+        if self._hold_key('2', 0.5):
             return True
         return False
 
@@ -61,7 +61,11 @@ class Priest(MapleTask):
 
     def _aux_pre(self) -> bool:
         print("[Priest] AuxState: pre")
-        return self.wait_stop_event(0.5)
+        for _ in range(3):
+            pyautogui.press('left')
+        for _ in range(3):
+            pyautogui.press('right')
+        return self.wait_stop_event(0.2)
 
     def _aux_process(self) -> bool:
         print("[Priest] AuxState: process")
@@ -73,10 +77,6 @@ class Priest(MapleTask):
         print("[Priest] AttackState: pre")
         if self.wait_stop_event(0.5):
             return True
-        for _ in range(3):
-            pyautogui.press('left')
-        for _ in range(3):
-            pyautogui.press('right')
         if self._hold_key('shift', 1):
             return True
         if self.wait_stop_event(0.5):
