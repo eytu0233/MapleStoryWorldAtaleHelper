@@ -1,3 +1,4 @@
+import random
 import threading
 import time
 from collections import deque
@@ -61,9 +62,9 @@ class Priest(MapleTask):
 
     def _aux_pre(self) -> bool:
         print("[Priest] AuxState: pre")
-        for _ in range(3):
+        for _ in range(random.randint(1, 10)):
             pyautogui.press('left')
-        for _ in range(3):
+        for _ in range(random.randint(1, 10)):
             pyautogui.press('right')
         return self.wait_stop_event(0.2)
 
@@ -77,7 +78,7 @@ class Priest(MapleTask):
         print("[Priest] AttackState: pre")
         if self.wait_stop_event(0.5):
             return True
-        if self._hold_key('shift', 1):
+        if self._hold_key('shift', 0.5):
             return True
         if self.wait_stop_event(0.5):
             return True
