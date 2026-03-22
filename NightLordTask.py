@@ -1,3 +1,4 @@
+import random
 import threading
 import time
 from collections import deque
@@ -7,56 +8,81 @@ import pyautogui
 
 from GameCharacter import GameCharacter, Job
 
-SKILL1_INTERVAL = 120
-SKILL2_INTERVAL = 60
-MOVE_INTERVAL   = 90
-STEP_INTERVAL   = 15     # 攻擊開始後幾秒觸發一次移動
+SKILL1_INTERVAL = 270
+SKILL2_INTERVAL = 270
+SKILL3_INTERVAL = 270
+SKILLX_INTERVAL_MIN = 10
+SKILLX_INTERVAL_MAX = 30
+STEP_INTERVAL = 10       # 攻擊開始後幾秒觸發一次移動
 
 _STEP_X_LEFT  = 0.98    # 右邊界
-_STEP_X_RIGHT = 0.66    # 左邊界
+_STEP_X_RIGHT = 0.45    # 左邊界
 _STEP_POLL    = 0.1     # 移動按鍵間隔（秒）
 
-Z_CHECK_CHUNK = 5
+AUX_INTERVAL  = 0.6
+
+C_CHECK_CHUNK = 5
 
 
 class State(Enum):
     ATTACK = auto()
-    MOVE = auto()
     STEP = auto()
     AUX = auto()
 
 
-class BowmasterTask(GameCharacter):
+class NightLordTask(GameCharacter):
     def __init__(self):
-        super().__init__(name='Bowmaster', job=Job.BOWMASTER)
+        super().__init__(name='NightLord', job=Job.NIGHTLORD)
         self.skill_ref_time = 0
         self.last_skill1 = 0
         self.last_skill2 = 0
+        self.last_skill3 = 0
         self._step_dir = 'left'
         self._event_queue: deque = deque()
         self._timer_stop = threading.Event()
-        self._step_gen = 0
+        self._step_gen = 0   # 用來取消舊的 step 計時器
 
     def move(self, direction: str) -> bool:
         return self._hold_key(direction, 1.5)
 
     def normal_attack(self) -> bool:
-        return self._hold_key('z', 1.0)
+        return self._hold_key('c', 1.0)
+
+    def _pop_event(self):
+        """Pop from event queue, prioritising AUX 1/2/3 over others."""
+        for i, (s, sk) in enumerate(self._event_queue):
+            if s == State.AUX and sk in (1, 2, 3):
+                del self._event_queue[i]
+                return s, sk
+        return self._event_queue.popleft()
+
+    # --- Timers ---
 
     def _start_aux_timers(self):
+        """啟動輔助技能定時器（SKILL1/2/3 + 隨機 x）。不含移動計時器。"""
         self._timer_stop.clear()
 
         def timer_loop(interval, state, aux_skill):
             while not self._timer_stop.wait(interval):
-                print(f"[BowmasterTask] Timer fired: {state} aux_skill={aux_skill}")
+                print(f"[NightLordTask] Timer fired: {state} aux_skill={aux_skill}")
                 self._event_queue.append((state, aux_skill))
 
+        def random_timer_loop():
+            while True:
+                interval = random.uniform(SKILLX_INTERVAL_MIN, SKILLX_INTERVAL_MAX)
+                if self._timer_stop.wait(interval):
+                    break
+                print(f"[NightLordTask] Timer fired: {State.AUX} aux_skill=x")
+                self._event_queue.append((State.AUX, 'x'))
+
         for interval, state, aux_skill in [
-            (SKILL1_INTERVAL, State.AUX,  1),
-            (SKILL2_INTERVAL, State.AUX,  2),
-            (MOVE_INTERVAL,   State.MOVE, None),
+            (SKILL1_INTERVAL, State.AUX, 1),
+            (SKILL2_INTERVAL, State.AUX, 2),
+            (SKILL3_INTERVAL, State.AUX, 3),
         ]:
             threading.Thread(target=timer_loop, args=(interval, state, aux_skill), daemon=True).start()
+
+        threading.Thread(target=random_timer_loop, daemon=True).start()
 
     def _schedule_step(self):
         """攻擊開始時呼叫，倒數 STEP_INTERVAL 秒後加入移動事件。"""
@@ -66,77 +92,61 @@ class BowmasterTask(GameCharacter):
 
         def fire():
             if not timer_stop.wait(STEP_INTERVAL) and self._step_gen == gen:
-                print("[BowmasterTask] Step timer fired")
+                print("[NightLordTask] Step timer fired")
                 self._event_queue.append((State.STEP, None))
 
         threading.Thread(target=fire, daemon=True).start()
 
     def _cancel_timers(self):
-        self._step_gen += 1
+        self._step_gen += 1   # 使所有待命的 step 計時器失效
         self._timer_stop.set()
 
     # --- InitState ---
 
     def _init_pre(self):
-        print("[BowmasterTask] InitState: pre")
+        print("[NightLordTask] InitState: pre")
 
     def _init_process(self) -> bool:
-        print("[BowmasterTask] InitState: process")
-        if self._hold_key('1', 1):
+        print("[NightLordTask] InitState: process")
+        if self._hold_key('1', AUX_INTERVAL):
             return True
-        if self._hold_key('2', 1):
+        if self._hold_key('2', AUX_INTERVAL):
+            return True
+        if self._hold_key('3', AUX_INTERVAL):
             return True
         self.skill_ref_time = time.time()
         self.last_skill1 = self.skill_ref_time
         self.last_skill2 = self.skill_ref_time
+        self.last_skill3 = self.skill_ref_time
         return False
 
     def _init_post(self) -> bool:
-        print("[BowmasterTask] InitState: post")
+        print("[NightLordTask] InitState: post")
         return self.wait_stop_event(1)
 
     # --- AttackState ---
 
     def _attack_pre(self) -> bool:
-        print("[BowmasterTask] AttackState: pre")
-        self._schedule_step()
+        print("[NightLordTask] AttackState: pre")
+        self._schedule_step()   # 攻擊開始，重新計時 10 秒
         if self.wait_stop_event(0.5):
             return True
-        pyautogui.keyDown('z')
+        pyautogui.keyDown('c')
         return False
 
     def _attack_post(self):
-        print("[BowmasterTask] AttackState: post")
-        pyautogui.keyUp('z')
-
-    # --- MoveState ---
-
-    def _move_pre(self) -> bool:
-        print("[BowmasterTask] MoveState: pre")
-        return self.wait_stop_event(0.5)
-
-    def _move_process(self) -> bool:
-        print("[BowmasterTask] MoveState: process")
-        if self._hold_key('left', 1.5):
-            return True
-        if self._hold_key('right', 3):
-            return True
-        return False
-
-    def _move_post(self):
-        print("[BowmasterTask] MoveState: post")
-        for _ in range(3):
-            pyautogui.press('left')
+        print("[NightLordTask] AttackState: post")
+        pyautogui.keyUp('c')
 
     # --- StepState ---
 
     def _step_process(self) -> bool:
         """
-        在 0.66 ~ 0.98 之間巡邏。
-        - x >= 0.98 → 往左直到 x <= 0.66
-        - x <= 0.66 → 往右直到 x >= 0.98
+        在 0.55 ~ 0.98 之間巡邏。
+        - x >= 0.98 → 往左直到 x <= 0.55
+        - x <= 0.55 → 往右直到 x >= 0.98
         - 其他      → 維持方向，直到碰到對應邊界
-        到達右邊界（x >= 0.98）後往左 0.2 秒再回攻擊。
+        到達邊界後反向移動 0.2 秒再回攻擊。
 
         Returns:
             True 表示收到停止訊號（task 應結束）。
@@ -156,7 +166,7 @@ class BowmasterTask(GameCharacter):
         mt = self.minimap_task
         eid = mt.register_pos_event(stop_condition, stop_event.set, once=True)
 
-        print(f"[BowmasterTask] StepState: dir={self._step_dir} x={x:.3f}")
+        print(f"[NightLordTask] StepState: dir={self._step_dir} x={x:.3f}")
         try:
             while not stop_event.is_set():
                 if self._hold_key(self._step_dir, _STEP_POLL):
@@ -165,44 +175,51 @@ class BowmasterTask(GameCharacter):
             mt.unregister_pos_event(eid)
 
         end_x = self.map_x
-        print(f"[BowmasterTask] StepState: done x={end_x:.3f}")
-        if end_x >= _STEP_X_LEFT:
-            print("[BowmasterTask] StepState: at right boundary, reversing left 0.2s")
-            if self._hold_key('left', 0.2):
+        print(f"[NightLordTask] StepState: done x={end_x:.3f}")
+        if end_x >= _STEP_X_LEFT or end_x <= _STEP_X_RIGHT:
+            reverse_dir = 'right' if self._step_dir == 'left' else 'left'
+            print(f"[NightLordTask] StepState: at boundary, reversing {reverse_dir} 0.2s")
+            if self._hold_key(reverse_dir, 0.2):
                 return True
         return False
 
     # --- AuxState ---
 
-    def _aux_process(self, skill: int) -> bool:
-        print(f"[BowmasterTask] AuxState: process (skill={skill})")
+    def _aux_process(self, skill) -> bool:
+        print(f"[NightLordTask] AuxState: process (skill={skill})")
         if skill == 1:
-            if self._hold_key('1', 1):
-                return True
-            if self._hold_key('1', 1):
+            if self._hold_key('1', AUX_INTERVAL):
                 return True
             self.last_skill1 = time.time()
-        else:
-            if self._hold_key('2', 1):
+        elif skill == 2:
+            if self._hold_key('2', AUX_INTERVAL):
                 return True
             self.last_skill2 = time.time()
+        elif skill == 3:
+            if self._hold_key('3', AUX_INTERVAL):
+                return True
+            self.last_skill3 = time.time()
+        elif skill == 'x':
+            if self.wait_stop_event(0):
+                return True
+            pyautogui.press('x')
         return False
 
     # --- State machine runner ---
 
     def task(self):
-        print("BowmasterTask starting")
+        print("NightLordTask starting")
         self._event_queue.clear()
         self._start_aux_timers()
 
         self._init_pre()
         if self._init_process():
             self._cancel_timers()
-            print("BowmasterTask end")
+            print("NightLordTask end")
             return
         if self._init_post():
             self._cancel_timers()
-            print("BowmasterTask end")
+            print("NightLordTask end")
             return
 
         state = State.ATTACK
@@ -215,35 +232,27 @@ class BowmasterTask(GameCharacter):
 
                 stopped = False
                 while True:
-                    if self.wait_stop_event(Z_CHECK_CHUNK):
+                    if self.wait_stop_event(C_CHECK_CHUNK):
                         stopped = True
                         break
                     if self._event_queue:
-                        state, aux_skill = self._event_queue.popleft()
-                        print(f"[BowmasterTask] AttackState: → {state} aux_skill={aux_skill}")
+                        state, aux_skill = self._pop_event()
+                        print(f"[NightLordTask] AttackState: → {state} aux_skill={aux_skill}")
                         break
 
                 self._attack_post()
                 if stopped:
                     break
 
-            elif state == State.MOVE:
-                if self._move_pre():
-                    break
-                if self._move_process():
-                    break
-                self._move_post()
-                state, aux_skill = self._event_queue.popleft() if self._event_queue else (State.ATTACK, None)
-
             elif state == State.STEP:
                 if self._step_process():
                     break
-                state, aux_skill = State.ATTACK, None
+                state, aux_skill = State.ATTACK, None   # 移動後一律回攻擊
 
             elif state == State.AUX:
                 if self._aux_process(aux_skill):
                     break
-                state, aux_skill = self._event_queue.popleft() if self._event_queue else (State.ATTACK, None)
+                state, aux_skill = self._pop_event() if self._event_queue else (State.ATTACK, None)
 
         self._cancel_timers()
-        print("BowmasterTask end")
+        print("NightLordTask end")

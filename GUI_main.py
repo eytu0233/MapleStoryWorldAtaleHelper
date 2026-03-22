@@ -6,13 +6,19 @@ import json
 import os
 from pynput.keyboard import Listener
 
-from ArrowDebugOverlay import ArrowDebugOverlay
+from DebugOverlay import DebugOverlay
 from BowmasterTask import BowmasterTask
 from FindBossTask import FindBossTask
+from GameCharacter import GameCharacter
+import win32gui
+
 from GameDetector import get_artale_hwnd
 from HelperTask import HelperTask
 from KingKongTask import KingKongTask
+from MapData import MapData
+from MapTestTask import MapTestTask
 from Priest import Priest
+from NightLordTask import NightLordTask
 from Righter import Righter
 from ScholarTask import ScholarTask
 from SupportTask import SupportTask
@@ -24,12 +30,12 @@ HOTKEY_MAP = [
     ("F2",  "弓手 (BowmasterTask)"),
     ("F3",  "支援 back_time=1s"),
     ("F4",  "支援 back_time=1.5s"),
-    ("F5",  "找 BOSS"),
-    ("F6",  "Scholar"),
+    ("F5",  "地圖錄製 (toggle)"),
+    ("F6",  "地圖測試 (MapTestTask)"),
     ("F7",  "Priest"),
     ("F8",  "KingKong"),
     ("F9",  "大菇菇"),
-    ("F10", "Righter"),
+    ("F10", "NightLord"),
     ("F11", "Helper"),
 ]
 
@@ -63,14 +69,14 @@ def save_config(config):
 
 # ── 主視窗 ────────────────────────────────────────────────────
 class MainWindow:
-    def __init__(self, root, arrow_overlay):
+    def __init__(self, root, debug_overlay):
         self.root = root
         self.root.title("MapleStory Worlds-Artale 輔助工具")
         self.root.geometry("500x640")
         self.root.resizable(True, True)
         self.root.minsize(400, 500)
 
-        self.arrow_overlay = arrow_overlay
+        self.debug_overlay = debug_overlay
 
         self._setup_ui()
         sys.stdout = _PrintRedirector(self.log)
@@ -94,6 +100,7 @@ class MainWindow:
         content.pack(fill=tk.BOTH, expand=True)
 
         self._setup_game_status(content)
+        self._setup_map_panel(content)
         self._setup_hotkey_panel(content)
         self._setup_log_area(content)
 
@@ -121,13 +128,130 @@ class MainWindow:
         btn_frame.pack(fill=tk.X, pady=(6, 0))
         self.overlay_btn = tk.Button(
             btn_frame,
-            text="▶ 顯示箭頭偵測",
-            command=self._toggle_arrow_overlay,
+            text="▶ 顯示 Debug 覆蓋層",
+            command=self._toggle_debug_overlay,
             font=("Arial", 10),
             bg="#95a5a6", fg="white",
             relief=tk.FLAT, padx=12, pady=4
         )
         self.overlay_btn.pack(side=tk.LEFT)
+
+    def _setup_map_panel(self, parent):
+        frame = tk.LabelFrame(
+            parent, text="地圖管理",
+            font=("Arial", 11, "bold"), bg="#ecf0f1", padx=12, pady=8
+        )
+        frame.pack(fill=tk.X, pady=(0, 10))
+
+        # ── 載入列 ──────────────────────────────────────────────
+        load_row = tk.Frame(frame, bg="#ecf0f1")
+        load_row.pack(fill=tk.X, pady=2)
+        tk.Label(load_row, text="地圖:", font=("Arial", 10),
+                 bg="#ecf0f1", width=5, anchor="w").pack(side=tk.LEFT)
+        self.map_combo = ttk.Combobox(load_row, width=22, state="readonly")
+        self.map_combo.pack(side=tk.LEFT, padx=(0, 4))
+        tk.Button(load_row, text="整理", font=("Arial", 9),
+                  command=self._refresh_map_list,
+                  bg="#bdc3c7", relief=tk.FLAT, padx=6
+                  ).pack(side=tk.LEFT, padx=(0, 4))
+        tk.Button(load_row, text="載入", font=("Arial", 9),
+                  command=self._load_map,
+                  bg="#2980b9", fg="white", relief=tk.FLAT, padx=8
+                  ).pack(side=tk.LEFT)
+
+        # ── 儲存列 ──────────────────────────────────────────────
+        save_row = tk.Frame(frame, bg="#ecf0f1")
+        save_row.pack(fill=tk.X, pady=2)
+        tk.Label(save_row, text="名稱:", font=("Arial", 10),
+                 bg="#ecf0f1", width=5, anchor="w").pack(side=tk.LEFT)
+        self.map_name_var = tk.StringVar()
+        tk.Entry(save_row, textvariable=self.map_name_var,
+                 width=24, font=("Arial", 10)).pack(side=tk.LEFT, padx=(0, 4))
+        tk.Button(save_row, text="儲存", font=("Arial", 9),
+                  command=self._save_map,
+                  bg="#27ae60", fg="white", relief=tk.FLAT, padx=8
+                  ).pack(side=tk.LEFT)
+
+        self._refresh_map_list()
+
+        # ── 小地圖邊界 ───────────────────────────────────────────
+        sep = tk.Frame(frame, bg="#bdc3c7", height=1)
+        sep.pack(fill=tk.X, pady=(6, 4))
+
+        bounds_title = tk.Frame(frame, bg="#ecf0f1")
+        bounds_title.pack(fill=tk.X)
+        tk.Label(bounds_title, text="小地圖邊界（視窗像素）",
+                 font=("Arial", 9, "bold"), bg="#ecf0f1", fg="#555").pack(side=tk.LEFT)
+        self.winsize_label = tk.Label(bounds_title, text="視窗: --",
+                                      font=("Arial", 9), bg="#ecf0f1", fg="#888")
+        self.winsize_label.pack(side=tk.RIGHT)
+
+        pos_row = tk.Frame(frame, bg="#ecf0f1")
+        pos_row.pack(fill=tk.X, pady=2)
+        for label, default, attr in [("X:", 66, "_mm_x"), ("Y:", 185, "_mm_y")]:
+            tk.Label(pos_row, text=label, font=("Arial", 10),
+                     bg="#ecf0f1").pack(side=tk.LEFT)
+            var = tk.StringVar(value=str(default))
+            setattr(self, attr, var)
+            tk.Entry(pos_row, textvariable=var, width=5,
+                     font=("Arial", 10)).pack(side=tk.LEFT, padx=(0, 8))
+
+        size_row = tk.Frame(frame, bg="#ecf0f1")
+        size_row.pack(fill=tk.X, pady=2)
+        for label, default, attr in [("寬:", 253, "_mm_w"), ("高:", 238, "_mm_h")]:
+            tk.Label(size_row, text=label, font=("Arial", 10),
+                     bg="#ecf0f1").pack(side=tk.LEFT)
+            var = tk.StringVar(value=str(default))
+            setattr(self, attr, var)
+            tk.Entry(size_row, textvariable=var, width=5,
+                     font=("Arial", 10)).pack(side=tk.LEFT, padx=(0, 8))
+
+        tk.Button(size_row, text="生效", font=("Arial", 9),
+                  command=self._apply_minimap_bounds,
+                  bg="#8e44ad", fg="white", relief=tk.FLAT, padx=10
+                  ).pack(side=tk.LEFT)
+
+    def _apply_minimap_bounds(self):
+        try:
+            x = int(self._mm_x.get())
+            y = int(self._mm_y.get())
+            w = int(self._mm_w.get())
+            h = int(self._mm_h.get())
+        except ValueError:
+            print("[GUI] 邊界數值格式錯誤")
+            return
+        mt = GameCharacter.shared_minimap()
+        if mt is not None:
+            mt.set_bounds(x, y, x + w, y + h)
+
+    def _refresh_map_list(self):
+        names = MapData.list_names()
+        self.map_combo["values"] = names
+        if names:
+            self.map_combo.set(names[0])   # 最新在首位（list_names 已降序）
+
+    def _load_map(self):
+        name = self.map_combo.get()
+        if not name:
+            return
+        try:
+            map_test_task.load_map(name)
+            self.map_name_var.set(name)
+        except Exception as e:
+            print(f"[GUI] 載入地圖失敗：{e}")
+
+    def _save_map(self):
+        name = self.map_name_var.get().strip()
+        if not name:
+            print("[GUI] 請輸入地圖名稱")
+            return
+        mt = GameCharacter.shared_minimap()
+        if mt is None:
+            return
+        md = mt.save_recording_as(name)
+        if md is not None:
+            self._refresh_map_list()
+            self.map_combo.set(name)
 
     def _setup_hotkey_panel(self, parent):
         frame = tk.LabelFrame(
@@ -170,21 +294,29 @@ class MainWindow:
             self.log_text.see(tk.END)
         ))
 
-    def _toggle_arrow_overlay(self):
-        self.arrow_overlay.toggle()
-        if self.arrow_overlay.running:
-            self.overlay_btn.config(text="⏸ 隱藏箭頭偵測", bg="#e67e22")
+    def _toggle_debug_overlay(self):
+        self.debug_overlay.toggle()
+        if self.debug_overlay.running:
+            self.overlay_btn.config(text="⏸ 隱藏 Debug 覆蓋層", bg="#e67e22")
+            gw = GameCharacter.shared_game_window()
+            if gw is not None and gw.is_valid:
+                try:
+                    win32gui.SetForegroundWindow(gw.hwnd)
+                except Exception:
+                    pass
         else:
-            self.overlay_btn.config(text="▶ 顯示箭頭偵測", bg="#95a5a6")
+            self.overlay_btn.config(text="▶ 顯示 Debug 覆蓋層", bg="#95a5a6")
 
     def _update_status(self):
-        hwnd = get_artale_hwnd()
-        if hwnd:
+        gw = GameCharacter.shared_game_window()
+        if gw is not None and gw.is_valid:
             self.process_label.config(text="✓ 檢測到", fg="green")
-            self.hwnd_label.config(text=hex(hwnd))
+            self.hwnd_label.config(text=hex(gw.hwnd))
+            self.winsize_label.config(text=f"視窗: {gw.width}×{gw.height}")
         else:
             self.process_label.config(text="✗ 未檢測到", fg="red")
             self.hwnd_label.config(text="--")
+            self.winsize_label.config(text="視窗: --")
         self.root.after(2000, self._update_status)
 
 
@@ -204,11 +336,17 @@ def on_press(key):
         support_task.set_back_time(1.5)
         support_task.toggle()
     if key.name == 'f5':
-        print("F5 - FindBossTask")
-        find_boss_task.toggle()
+        mt = GameCharacter.shared_minimap()
+        if mt is not None:
+            if mt.recording:
+                print("F5 - 地圖錄製 停止")
+                mt.stop_recording()
+            else:
+                print("F5 - 地圖錄製 開始")
+                mt.start_recording()
     if key.name == 'f6':
-        print("F6 - ScholarTask")
-        scholar_task.toggle()
+        print("F6 - MapTestTask")
+        map_test_task.toggle()
     if key.name == 'f7':
         print("F7 - PriestTask")
         priest_task.toggle()
@@ -219,23 +357,25 @@ def on_press(key):
         print("F9 - ZombieMushKingTask")
         zombie_mushking_task.toggle()
     if key.name == 'f10':
-        print("F10 - Righter")
-        righter_task.toggle()
+        print("F10 - NightLordTask")
+        night_lord_task.toggle()
     if key.name == 'f11':
         print("F11 - HelperTask")
         helper_task.toggle()
 
 
 # ── 初始化 Tasks ─────────────────────────────────────────────
-bowmaster_task      = BowmasterTask()
-find_boss_task      = FindBossTask()
-priest_task         = Priest()
-king_kong_task      = KingKongTask(find_boss_task)
-scholar_task        = ScholarTask(find_boss_task)
-righter_task        = Righter()
-support_task        = SupportTask()
+bowmaster_task       = BowmasterTask()
+find_boss_task       = FindBossTask()
+priest_task          = Priest()
+king_kong_task       = KingKongTask(find_boss_task)
+scholar_task         = ScholarTask(find_boss_task)
+night_lord_task      = NightLordTask()
+map_test_task        = MapTestTask()   # 初始化時自動載入最新地圖
+righter_task         = Righter()
+support_task         = SupportTask()
 zombie_mushking_task = ZombieMushKingTask()
-helper_task         = HelperTask()
+helper_task          = HelperTask()
 
 find_boss_task.register_boss_found_event('大菇菇', zombie_mushking_task)
 
@@ -243,8 +383,8 @@ config = load_config()
 
 # ── 啟動 ─────────────────────────────────────────────────────
 root = tk.Tk()
-arrow_debug_overlay = ArrowDebugOverlay(bowmaster_task.detect_arrow_task)
-app = MainWindow(root, arrow_debug_overlay)
+debug_overlay = DebugOverlay(bowmaster_task)
+app = MainWindow(root, debug_overlay)
 
 listener = Listener(on_press=on_press)
 listener.start()
