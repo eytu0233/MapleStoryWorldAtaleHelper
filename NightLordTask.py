@@ -15,9 +15,10 @@ SKILLX_INTERVAL_MIN = 10
 SKILLX_INTERVAL_MAX = 30
 STEP_INTERVAL = 10       # 攻擊開始後幾秒觸發一次移動
 
-_STEP_X_LEFT  = 0.98    # 右邊界
-_STEP_X_RIGHT = 0.45    # 左邊界
-_STEP_POLL    = 0.1     # 移動按鍵間隔（秒）
+_STEP_X_LEFT          = 0.98    # 右邊界
+_STEP_X_RIGHT         = 0.55    # 左邊界
+_STEP_CENTER_OFFSET   = 0.01    # 往中心點移動時的停止偏移量
+_STEP_POLL            = 0.1     # 移動按鍵間隔（秒）
 
 AUX_INTERVAL  = 0.6
 
@@ -38,6 +39,7 @@ class NightLordTask(GameCharacter):
         self.last_skill2 = 0
         self.last_skill3 = 0
         self._step_dir = 'left'
+        self._heading_to_boundary = False   # True = 此次移動直衝邊界，不在中心停
         self._event_queue: deque = deque()
         self._timer_stop = threading.Event()
         self._step_gen = 0   # 用來取消舊的 step 計時器
@@ -129,8 +131,10 @@ class NightLordTask(GameCharacter):
     def _attack_pre(self) -> bool:
         print("[NightLordTask] AttackState: pre")
         self._schedule_step()   # 攻擊開始，重新計時 10 秒
+        # 停下來釋放 x 技能
         if self.wait_stop_event(0.5):
             return True
+        self._hold_key('x', AUX_INTERVAL)
         pyautogui.keyDown('c')
         return False
 
@@ -142,25 +146,37 @@ class NightLordTask(GameCharacter):
 
     def _step_process(self) -> bool:
         """
-        在 0.55 ~ 0.98 之間巡邏。
-        - x >= 0.98 → 往左直到 x <= 0.55
-        - x <= 0.55 → 往右直到 x >= 0.98
-        - 其他      → 維持方向，直到碰到對應邊界
+        在 0.55 ~ 0.98 之間分段移動：
+        - x >= center（靠右）→ 往左
+            - x > center + offset → 先停在 center+offset 攻擊，下次再到左邊界
+            - x <= center + offset → 繼續走到左邊界
+        - x < center（靠左）→ 往右
+            - x < center - offset → 先停在 center-offset 攻擊，下次再到右邊界
+            - x >= center - offset → 繼續走到右邊界
         到達邊界後反向移動 0.2 秒再回攻擊。
 
         Returns:
             True 表示收到停止訊號（task 應結束）。
         """
         x = self.map_x
-        if x >= _STEP_X_LEFT:
-            self._step_dir = 'left'
-        elif x <= _STEP_X_RIGHT:
+        center = (_STEP_X_RIGHT + _STEP_X_LEFT) / 2
+        if x < center:
             self._step_dir = 'right'
+        else:
+            self._step_dir = 'left'
 
         if self._step_dir == 'left':
-            stop_condition = lambda cx, cy: cx <= _STEP_X_RIGHT
+            if self._heading_to_boundary:
+                stop_condition = lambda cx, cy: cx <= _STEP_X_RIGHT
+            else:
+                stop_x = center + _STEP_CENTER_OFFSET
+                stop_condition = lambda cx, cy: cx <= stop_x
         else:
-            stop_condition = lambda cx, cy: cx >= _STEP_X_LEFT
+            if self._heading_to_boundary:
+                stop_condition = lambda cx, cy: cx >= _STEP_X_LEFT
+            else:
+                stop_x = center - _STEP_CENTER_OFFSET
+                stop_condition = lambda cx, cy: cx >= stop_x
 
         stop_event = threading.Event()
         mt = self.minimap_task
@@ -177,16 +193,23 @@ class NightLordTask(GameCharacter):
         end_x = self.map_x
         print(f"[NightLordTask] StepState: done x={end_x:.3f}")
         if end_x >= _STEP_X_LEFT or end_x <= _STEP_X_RIGHT:
+            # 到達邊界：下次停在中心附近
+            self._heading_to_boundary = False
             reverse_dir = 'right' if self._step_dir == 'left' else 'left'
             print(f"[NightLordTask] StepState: at boundary, reversing {reverse_dir} 0.2s")
             if self._hold_key(reverse_dir, 0.2):
                 return True
+        else:
+            # 停在中心附近：下次直衝邊界
+            self._heading_to_boundary = True
         return False
 
     # --- AuxState ---
 
     def _aux_process(self, skill) -> bool:
         print(f"[NightLordTask] AuxState: process (skill={skill})")
+        if self.wait_stop_event(0.5):
+            return True
         if skill == 1:
             if self._hold_key('1', AUX_INTERVAL):
                 return True

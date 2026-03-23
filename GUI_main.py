@@ -1,6 +1,6 @@
 import sys
 import tkinter as tk
-from tkinter import ttk, scrolledtext
+from tkinter import ttk, scrolledtext, filedialog
 from datetime import datetime
 import json
 import os
@@ -19,6 +19,7 @@ from MapData import MapData
 from MapTestTask import MapTestTask
 from Priest import Priest
 from NightLordTask import NightLordTask
+from GhostWomen import GhostWomen
 from Righter import Righter
 from ScholarTask import ScholarTask
 from SupportTask import SupportTask
@@ -32,10 +33,10 @@ HOTKEY_MAP = [
     ("F4",  "支援 back_time=1.5s"),
     ("F5",  "地圖錄製 (toggle)"),
     ("F6",  "地圖測試 (MapTestTask)"),
-    ("F7",  "Priest"),
-    ("F8",  "KingKong"),
+    ("F7",  "主教活7"),
+    ("F8",  "標賊鬼女"),
     ("F9",  "大菇菇"),
-    ("F10", "NightLord"),
+    ("F10", "標賊龍蛋"),
     ("F11", "Helper"),
 ]
 
@@ -188,27 +189,38 @@ class MainWindow:
 
         pos_row = tk.Frame(frame, bg="#ecf0f1")
         pos_row.pack(fill=tk.X, pady=2)
-        for label, default, attr in [("X:", 66, "_mm_x"), ("Y:", 185, "_mm_y")]:
+        mm = config.get("minimap_bounds", {})
+        for label, default, key, attr in [("X:", 66, "x", "_mm_x"), ("Y:", 185, "y", "_mm_y")]:
             tk.Label(pos_row, text=label, font=("Arial", 10),
                      bg="#ecf0f1").pack(side=tk.LEFT)
-            var = tk.StringVar(value=str(default))
+            var = tk.StringVar(value=str(mm.get(key, default)))
             setattr(self, attr, var)
             tk.Entry(pos_row, textvariable=var, width=5,
                      font=("Arial", 10)).pack(side=tk.LEFT, padx=(0, 8))
 
         size_row = tk.Frame(frame, bg="#ecf0f1")
         size_row.pack(fill=tk.X, pady=2)
-        for label, default, attr in [("寬:", 253, "_mm_w"), ("高:", 238, "_mm_h")]:
+        for label, default, key, attr in [("寬:", 253, "w", "_mm_w"), ("高:", 238, "h", "_mm_h")]:
             tk.Label(size_row, text=label, font=("Arial", 10),
                      bg="#ecf0f1").pack(side=tk.LEFT)
-            var = tk.StringVar(value=str(default))
+            var = tk.StringVar(value=str(mm.get(key, default)))
             setattr(self, attr, var)
             tk.Entry(size_row, textvariable=var, width=5,
                      font=("Arial", 10)).pack(side=tk.LEFT, padx=(0, 8))
-
         tk.Button(size_row, text="生效", font=("Arial", 9),
                   command=self._apply_minimap_bounds,
                   bg="#8e44ad", fg="white", relief=tk.FLAT, padx=10
+                  ).pack(side=tk.LEFT)
+
+        btn_row = tk.Frame(frame, bg="#ecf0f1")
+        btn_row.pack(fill=tk.X, pady=2)
+        tk.Button(btn_row, text="載入", font=("Arial", 9),
+                  command=self._load_minimap_bounds,
+                  bg="#16a085", fg="white", relief=tk.FLAT, padx=10
+                  ).pack(side=tk.LEFT, padx=(0, 6))
+        tk.Button(btn_row, text="儲存", font=("Arial", 9),
+                  command=self._save_minimap_bounds_to_file,
+                  bg="#2980b9", fg="white", relief=tk.FLAT, padx=10
                   ).pack(side=tk.LEFT)
 
     def _apply_minimap_bounds(self):
@@ -223,6 +235,43 @@ class MainWindow:
         mt = GameCharacter.shared_minimap()
         if mt is not None:
             mt.set_bounds(x, y, x + w, y + h)
+        config["minimap_bounds"] = {"x": x, "y": y, "w": w, "h": h}
+        save_config(config)
+        print(f"[GUI] 小地圖邊界已套用：x={x} y={y} w={w} h={h}")
+
+    def _load_minimap_bounds(self):
+        mt = GameCharacter.shared_minimap()
+        if mt is None:
+            print("[GUI] 尚無小地圖任務，無法載入邊界")
+            return
+        x0, y0, x1, y1 = mt.get_bounds()
+        self._mm_x.set(str(x0))
+        self._mm_y.set(str(y0))
+        self._mm_w.set(str(x1 - x0))
+        self._mm_h.set(str(y1 - y0))
+        print(f"[GUI] 已讀取邊界：x={x0} y={y0} w={x1 - x0} h={y1 - y0}")
+
+    def _save_minimap_bounds_to_file(self):
+        try:
+            x = int(self._mm_x.get())
+            y = int(self._mm_y.get())
+            w = int(self._mm_w.get())
+            h = int(self._mm_h.get())
+        except ValueError:
+            print("[GUI] 邊界數值格式錯誤")
+            return
+        path = filedialog.asksaveasfilename(
+            title="儲存小地圖邊界",
+            defaultextension=".json",
+            filetypes=[("JSON 檔案", "*.json"), ("所有檔案", "*.*")],
+            initialfile="minimap_bounds.json",
+        )
+        if not path:
+            return
+        data = {"minimap_bounds": {"x": x, "y": y, "w": w, "h": h}}
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        print(f"[GUI] 小地圖邊界已儲存至：{path}")
 
     def _refresh_map_list(self):
         names = MapData.list_names()
@@ -351,13 +400,13 @@ def on_press(key):
         print("F7 - PriestTask")
         priest_task.toggle()
     if key.name == 'f8':
-        print("F8 - KingKongTask")
-        king_kong_task.toggle()
+        print("F8 - 標賊鬼女")
+        ghost_women_task.toggle()
     if key.name == 'f9':
         print("F9 - ZombieMushKingTask")
         zombie_mushking_task.toggle()
     if key.name == 'f10':
-        print("F10 - NightLordTask")
+        print("F10 - 標賊龍蛋")
         night_lord_task.toggle()
     if key.name == 'f11':
         print("F11 - HelperTask")
@@ -371,6 +420,7 @@ priest_task          = Priest()
 king_kong_task       = KingKongTask(find_boss_task)
 scholar_task         = ScholarTask(find_boss_task)
 night_lord_task      = NightLordTask()
+ghost_women_task     = GhostWomen()
 map_test_task        = MapTestTask()   # 初始化時自動載入最新地圖
 righter_task         = Righter()
 support_task         = SupportTask()
@@ -380,6 +430,15 @@ helper_task          = HelperTask()
 find_boss_task.register_boss_found_event('大菇菇', zombie_mushking_task)
 
 config = load_config()
+
+# 啟動時套用已儲存的小地圖邊界
+_mm = config.get("minimap_bounds", {})
+if _mm:
+    _mt = GameCharacter.shared_minimap()
+    if _mt is not None:
+        _mt.set_bounds(_mm.get("x", 66), _mm.get("y", 185),
+                       _mm.get("x", 66) + _mm.get("w", 253),
+                       _mm.get("y", 185) + _mm.get("h", 238))
 
 # ── 啟動 ─────────────────────────────────────────────────────
 root = tk.Tk()

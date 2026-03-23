@@ -10,31 +10,43 @@ import win32gui
 
 reader = None
 
-def recognize_text(hWnd, width_scale, height_scale, x_scale, y_scale):
+def recognize_text(hWnd_or_window, width_scale, height_scale, x_scale, y_scale):
+    """
+    辨識遊戲視窗內指定比例區域的文字。
+
+    第一個參數可傳入：
+        - GameWindow 實例（推薦）：使用即時更新的視窗幾何，截圖更準確。
+        - int (hwnd)：向後相容舊用法，每次呼叫都重新查詢視窗大小。
+    """
     global reader
 
     start_time = time.time()
 
-    left, top, right, bottom = win32gui.GetWindowRect(hWnd)
-    width = right - left
-    height = bottom - top
-    #print(f'left {left} top {top} right {right} bottom {bottom}')
+    # 支援 GameWindow 或舊版 hwnd
+    from GameWindow import GameWindow
+    if isinstance(hWnd_or_window, GameWindow):
+        img_np = hWnd_or_window.capture(x_scale, y_scale, width_scale, height_scale)
+        if img_np is None:
+            return []
+    else:
+        hWnd = hWnd_or_window
+        left, top, right, bottom = win32gui.GetWindowRect(hWnd)
+        width = right - left
+        height = bottom - top
 
-    catch_width = int(width * width_scale)
-    catch_height = int(height * height_scale)
+        catch_width = int(width * width_scale)
+        catch_height = int(height * height_scale)
+        catch_left = int(left + width * x_scale)
+        catch_top = int(top + height * y_scale)
 
-    catch_left = int(left + width * x_scale)
-    catch_top = int(top + height * y_scale)
-    #print(f'catch_left {catch_left} catch_top {catch_top} catch_width {catch_width} catch_height {catch_height}')
+        screenshot = pyautogui.screenshot(region=(catch_left, catch_top, catch_width, catch_height))
+        img_np = np.array(screenshot)
 
-    screenshot = pyautogui.screenshot(region=(catch_left, catch_top, catch_width, catch_height))
-    img_np = np.array(screenshot)
     if reader is None:
         reader = easyocr.Reader(['ch_tra'], gpu=True)
     results = reader.readtext(img_np)
 
     record = time.time() - start_time
-
     #print(f"recognize_text辨識花費秒數 {record} 秒")
 
     return results

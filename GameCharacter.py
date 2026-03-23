@@ -38,6 +38,7 @@ class Job(Enum):
     PRIEST = auto()
     SCHOLAR = auto()
     NIGHTLORD = auto()
+    GHOSTWOMEN = auto()
     MAPTEST = auto()
 
 
