@@ -213,6 +213,22 @@ class GameCharacter(MapleTask, abc.ABC):
 
         return stopped
 
+    def jump(self, direction: str) -> bool:
+        """按住 alt + 左/右方向鍵進行方向跳躍。回傳 True 表示收到 stop 訊號。"""
+        pyautogui.keyDown('alt')
+        stopped = self._hold_key(direction, 0.2)
+        pyautogui.keyUp('alt')
+        return stopped
+
+    def move_down(self) -> bool:
+        """先按住下方向鍵再按 alt，持續 0.5 秒後放開，讓角色穿越平台往下跳。"""
+        pyautogui.keyDown('down')
+        pyautogui.keyDown('alt')
+        stopped = self.wait_stop_event(1)
+        pyautogui.keyUp('alt')
+        pyautogui.keyUp('down')
+        return stopped
+
     def update_position(self, x: float, y: float):
         self.position.x = x
         self.position.y = y

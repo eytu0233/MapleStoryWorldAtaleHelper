@@ -24,6 +24,7 @@ class DebugOverlay:
         self.window.attributes('-alpha', 0.4)
         self.canvas = tk.Canvas(self.window, bg='black', highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
+        self.canvas.bind("<Button-1>", lambda e: self.hide())
         self.running = True
         self.update_overlay()
         print(f"[DebugOverlay] 覆蓋層已顯示（{self.character.name}）")

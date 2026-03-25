@@ -24,6 +24,7 @@ from Righter import Righter
 from ScholarTask import ScholarTask
 from SupportTask import SupportTask
 from ZombieMushKingTask import ZombieMushKingTask
+from lab102roomTask import Lab102RoomTask
 
 CONFIG_FILE = "config.json"
 
@@ -35,7 +36,7 @@ HOTKEY_MAP = [
     ("F6",  "地圖測試 (MapTestTask)"),
     ("F7",  "主教活7"),
     ("F8",  "標賊鬼女"),
-    ("F9",  "大菇菇"),
+    ("F9",  "研究所102號房"),
     ("F10", "標賊龍蛋"),
     ("F11", "Helper"),
 ]
@@ -240,16 +241,27 @@ class MainWindow:
         print(f"[GUI] 小地圖邊界已套用：x={x} y={y} w={w} h={h}")
 
     def _load_minimap_bounds(self):
-        mt = GameCharacter.shared_minimap()
-        if mt is None:
-            print("[GUI] 尚無小地圖任務，無法載入邊界")
+        path = filedialog.askopenfilename(
+            title="載入小地圖邊界",
+            filetypes=[("JSON 檔案", "*.json"), ("所有檔案", "*.*")],
+        )
+        if not path:
             return
-        x0, y0, x1, y1 = mt.get_bounds()
-        self._mm_x.set(str(x0))
-        self._mm_y.set(str(y0))
-        self._mm_w.set(str(x1 - x0))
-        self._mm_h.set(str(y1 - y0))
-        print(f"[GUI] 已讀取邊界：x={x0} y={y0} w={x1 - x0} h={y1 - y0}")
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            mm = data.get("minimap_bounds", data)
+            x = int(mm["x"]); y = int(mm["y"])
+            w = int(mm["w"]); h = int(mm["h"])
+        except Exception as e:
+            print(f"[GUI] 讀取邊界 JSON 失敗：{e}")
+            return
+        self._mm_x.set(str(x))
+        self._mm_y.set(str(y))
+        self._mm_w.set(str(w))
+        self._mm_h.set(str(h))
+        self._apply_minimap_bounds()
+        print(f"[GUI] 已從檔案載入邊界：x={x} y={y} w={w} h={h}")
 
     def _save_minimap_bounds_to_file(self):
         try:
@@ -403,8 +415,8 @@ def on_press(key):
         print("F8 - 標賊鬼女")
         ghost_women_task.toggle()
     if key.name == 'f9':
-        print("F9 - ZombieMushKingTask")
-        zombie_mushking_task.toggle()
+        print("F9 - 研究所102號房")
+        lab102room_task.toggle()
     if key.name == 'f10':
         print("F10 - 標賊龍蛋")
         night_lord_task.toggle()
@@ -425,6 +437,7 @@ map_test_task        = MapTestTask()   # 初始化時自動載入最新地圖
 righter_task         = Righter()
 support_task         = SupportTask()
 zombie_mushking_task = ZombieMushKingTask()
+lab102room_task      = Lab102RoomTask()
 helper_task          = HelperTask()
 
 find_boss_task.register_boss_found_event('大菇菇', zombie_mushking_task)
