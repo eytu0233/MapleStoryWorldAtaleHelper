@@ -223,7 +223,29 @@ class MainWindow:
         tk.Button(btn_row, text="儲存", font=("Arial", 9),
                   command=self._save_minimap_bounds_to_file,
                   bg="#2980b9", fg="white", relief=tk.FLAT, padx=10
+                  ).pack(side=tk.LEFT, padx=(0, 6))
+        tk.Button(btn_row, text="自動偵測", font=("Arial", 9),
+                  command=self._detect_minimap_bounds,
+                  bg="#e67e22", fg="white", relief=tk.FLAT, padx=10
                   ).pack(side=tk.LEFT)
+
+    def _detect_minimap_bounds(self):
+        from Utility import detect_minimap_bounds
+        gw = GameCharacter.shared_game_window()
+        if gw is None or not gw.is_valid:
+            print("[GUI] 遊戲視窗未偵測到，無法自動偵測邊界")
+            return
+        result = detect_minimap_bounds(gw)
+        if result is None:
+            print("[GUI] 小地圖邊界自動偵測失敗，請手動設定")
+            return
+        x0, y0, x1, y1 = result
+        self._mm_x.set(str(x0))
+        self._mm_y.set(str(y0))
+        self._mm_w.set(str(x1 - x0))
+        self._mm_h.set(str(y1 - y0))
+        print(f"[GUI] 自動偵測結果：x={x0} y={y0} w={x1-x0} h={y1-y0}")
+        self._apply_minimap_bounds()
 
     def _apply_minimap_bounds(self):
         try:
