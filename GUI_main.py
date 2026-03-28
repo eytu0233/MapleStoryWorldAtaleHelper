@@ -79,6 +79,7 @@ class MainWindow:
         self.root.minsize(400, 500)
 
         self.debug_overlay = debug_overlay
+        self.debug_overlay.on_hide_callback = self._on_overlay_hidden
 
         self._setup_ui()
         sys.stdout = _PrintRedirector(self.log)
@@ -354,6 +355,9 @@ class MainWindow:
             self.log_text.insert(tk.END, f"[{timestamp}] {message}\n"),
             self.log_text.see(tk.END)
         ))
+
+    def _on_overlay_hidden(self):
+        self.overlay_btn.config(text="▶ 顯示 Debug 覆蓋層", bg="#95a5a6")
 
     def _toggle_debug_overlay(self):
         self.debug_overlay.toggle()

@@ -32,6 +32,13 @@ def _get_ocr_reader() -> easyocr.Reader:
 _HP_REGION = (0.25, 0.922, 0.105, 0.042)   # (x, y, w, h) 比例
 _MP_REGION = (0.365, 0.922, 0.105, 0.042)
 
+# ── 角色名字邊框顏色偵測設定 ─────────────────────────────────────
+_CHAR_COLOR_RGB       = (199, 168, 214)     # 名字邊框 RGB
+_CHAR_COLOR_TOLERANCE = 20                  # 每通道容差（±20）
+_CHAR_MIN_AREA        = 30                  # 最小輪廓面積（px²）
+_CHAR_SEARCH_Y_MIN    = 0.05                # 排除小地圖（上方 5%）
+_CHAR_SEARCH_Y_MAX    = 0.90                # 排除 HP/MP bar（下方 10%）
+
 
 class Job(Enum):
     BOWMASTER = auto()
@@ -44,8 +51,12 @@ class Job(Enum):
 
 @dataclass
 class Position:
-    x: float = 0.0   # 相對於小地圖邊框的水平比例 0.0（左）～1.0（右）
-    y: float = 0.0   # 相對於小地圖邊框的垂直比例 0.0（上）～1.0（下）
+    x: float = 0.0       # 相對於小地圖邊框的水平比例 0.0（左）～1.0（右）
+    y: float = 0.0       # 相對於小地圖邊框的垂直比例 0.0（上）～1.0（下）
+    screen_x: int = 0    # 視窗像素座標（角色名字邊框左上角 x）
+    screen_y: int = 0    # 視窗像素座標（角色名字邊框左上角 y）
+    screen_w: int = 0    # 偵測到的名字邊框寬度（px）
+    screen_h: int = 0    # 偵測到的名字邊框高度（px）
 
 
 class GameCharacter(MapleTask, abc.ABC):
@@ -54,6 +65,10 @@ class GameCharacter(MapleTask, abc.ABC):
     _shared_mt: ClassVar[MinimapTask | None] = None
     _shared_hp: ClassVar[float] = 100.0
     _shared_mp: ClassVar[float] = 100.0
+    _shared_screen_x: ClassVar[int] = 0
+    _shared_screen_y: ClassVar[int] = 0
+    _shared_screen_w: ClassVar[int] = 0
+    _shared_screen_h: ClassVar[int] = 0
     _shared_stat_stop: ClassVar[threading.Event] = threading.Event()
     _shared_init_lock: ClassVar[threading.Lock] = threading.Lock()
     _shared_monitors_running: ClassVar[bool] = False
@@ -70,6 +85,7 @@ class GameCharacter(MapleTask, abc.ABC):
                 cls._shared_monitors_running = True
                 threading.Thread(target=cls._hp_monitor_loop, daemon=True).start()
                 threading.Thread(target=cls._mp_monitor_loop, daemon=True).start()
+                threading.Thread(target=cls._screen_detect_loop, daemon=True).start()
 
     @classmethod
     def _hp_monitor_loop(cls):
@@ -90,6 +106,41 @@ class GameCharacter(MapleTask, abc.ABC):
                     cls._shared_mp = pct
             except Exception as e:
                 print(f"[GameCharacter] MP monitor 異常: {e}")
+
+    @classmethod
+    def _screen_detect_loop(cls):
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        r0, g0, b0 = _CHAR_COLOR_RGB
+        tol = _CHAR_COLOR_TOLERANCE
+        while not cls._shared_stat_stop.wait(0.1):
+            try:
+                gw = cls._shared_gw
+                if gw is None or not gw.is_valid:
+                    continue
+                frame = gw.capture(0.0, 0.0, 1.0, 1.0)
+                if frame is None:
+                    continue
+                h, w = frame.shape[:2]
+                y0 = int(h * _CHAR_SEARCH_Y_MIN)
+                y1 = int(h * _CHAR_SEARCH_Y_MAX)
+                roi = frame[y0:y1]
+                mask = (
+                    (roi[:, :, 0] >= r0 - tol) & (roi[:, :, 0] <= r0 + tol) &
+                    (roi[:, :, 1] >= g0 - tol) & (roi[:, :, 1] <= g0 + tol) &
+                    (roi[:, :, 2] >= b0 - tol) & (roi[:, :, 2] <= b0 + tol)
+                ).astype(np.uint8) * 255
+                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if contours:
+                    largest = max(contours, key=cv2.contourArea)
+                    if cv2.contourArea(largest) >= _CHAR_MIN_AREA:
+                        cx, cy, cw, ch = cv2.boundingRect(largest)
+                        cls._shared_screen_x = cx
+                        cls._shared_screen_y = cy + y0
+                        cls._shared_screen_w = cw
+                        cls._shared_screen_h = ch
+            except Exception as e:
+                print(f"[GameCharacter] screen detect 異常: {e}")
 
     @classmethod
     def shared_minimap(cls) -> MinimapTask | None:
@@ -145,6 +196,22 @@ class GameCharacter(MapleTask, abc.ABC):
     @property
     def map_y(self) -> float:
         return self.minimap_task.pos[1]
+
+    @property
+    def screen_x(self) -> int:
+        return GameCharacter._shared_screen_x
+
+    @property
+    def screen_y(self) -> int:
+        return GameCharacter._shared_screen_y
+
+    @property
+    def screen_w(self) -> int:
+        return GameCharacter._shared_screen_w
+
+    @property
+    def screen_h(self) -> int:
+        return GameCharacter._shared_screen_h
 
     # ── HP / MP 辨識（靜態輔助）────────────────────────────────
 

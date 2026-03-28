@@ -13,6 +13,7 @@ class DebugOverlay:
         self.window = None
         self.canvas = None
         self.running = False
+        self.on_hide_callback = None
 
     def show(self):
         if self.window:
@@ -36,6 +37,8 @@ class DebugOverlay:
             self.window = None
             self.canvas = None
         print("[DebugOverlay] 覆蓋層已隱藏")
+        if self.on_hide_callback:
+            self.on_hide_callback()
 
     def toggle(self):
         if self.window:
@@ -114,6 +117,22 @@ class DebugOverlay:
                     self.canvas.create_text(
                         80, 40, text="小地圖邊框未偵測到",
                         fill='gray', font=('Arial', 10, 'bold'), anchor='nw'
+                    )
+
+                # ── 角色螢幕位置（名字邊框）──────────────────────
+                sx = self.character.screen_x
+                sy = self.character.screen_y
+                sw = self.character.screen_w
+                sh = self.character.screen_h
+                if sw > 0 and sh > 0:
+                    self.canvas.create_rectangle(
+                        sx, sy, sx + sw, sy + sh,
+                        outline='#c7a8d6', width=2
+                    )
+                    self.canvas.create_text(
+                        sx, sy - 2,
+                        text=f"角色 ({sx}, {sy}) {sw}×{sh}",
+                        fill='#c7a8d6', font=('Arial', 8, 'bold'), anchor='sw'
                     )
 
                 # ── HP / MP 辨識範圍 ─────────────────────────────
