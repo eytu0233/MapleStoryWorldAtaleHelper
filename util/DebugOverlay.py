@@ -1,8 +1,12 @@
 import tkinter as tk
 import win32gui
 
-from GameCharacter import _HP_REGION, _MP_REGION, GameCharacter
-from MinimapTask import MinimapTask
+from controller.GameCharacter import (
+    _HP_REGION, _MP_REGION, GameCharacter,
+    _CHAR_SEARCH_X_MIN, _CHAR_SEARCH_X_MAX,
+    _CHAR_SEARCH_Y_MIN, _CHAR_SEARCH_Y_MAX,
+)
+from controller.MinimapTask import MinimapTask
 
 
 class DebugOverlay:
@@ -74,6 +78,11 @@ class DebugOverlay:
             return
 
         try:
+            gw = self.character.game_window
+            if gw.is_valid and win32gui.IsIconic(gw.hwnd):
+                self.hide()
+                return
+
             rect = self._get_window_rect()
             if rect:
                 wx, wy, ww, wh = rect
@@ -118,6 +127,15 @@ class DebugOverlay:
                         80, 40, text="小地圖邊框未偵測到",
                         fill='gray', font=('Arial', 10, 'bold'), anchor='nw'
                     )
+
+                # ── 名字邊框偵測搜尋範圍 ─────────────────────────
+                search_region = (
+                    _CHAR_SEARCH_X_MIN,
+                    _CHAR_SEARCH_Y_MIN,
+                    _CHAR_SEARCH_X_MAX - _CHAR_SEARCH_X_MIN,
+                    _CHAR_SEARCH_Y_MAX - _CHAR_SEARCH_Y_MIN,
+                )
+                self._draw_region(ww, wh, search_region, '#a0c0ff', '名字偵測範圍')
 
                 # ── 角色螢幕位置（名字邊框）──────────────────────
                 sx = self.character.screen_x

@@ -6,35 +6,25 @@ import json
 import os
 from pynput.keyboard import Listener
 
-from DebugOverlay import DebugOverlay
+from util.DebugOverlay import DebugOverlay
 from BowmasterTask import BowmasterTask
-from FindBossTask import FindBossTask
-from GameCharacter import GameCharacter
+from controller.GameCharacter import GameCharacter
 import win32gui
 
-from GameDetector import get_artale_hwnd
+from util.GameDetector import get_artale_hwnd
 from HelperTask import HelperTask
-from KingKongTask import KingKongTask
-from MapData import MapData
+from util.MapData import MapData
 from MapTestTask import MapTestTask
-from Priest import Priest
 from NightLordTask import NightLordTask
 from GhostWomen import GhostWomen
-from Righter import Righter
-from ScholarTask import ScholarTask
-from SupportTask import SupportTask
-from ZombieMushKingTask import ZombieMushKingTask
 from lab102roomTask import Lab102RoomTask
 
 CONFIG_FILE = "config.json"
 
 HOTKEY_MAP = [
     ("F2",  "弓手 (BowmasterTask)"),
-    ("F3",  "支援 back_time=1s"),
-    ("F4",  "支援 back_time=1.5s"),
     ("F5",  "地圖錄製 (toggle)"),
     ("F6",  "地圖測試 (MapTestTask)"),
-    ("F7",  "主教活7"),
     ("F8",  "標賊鬼女"),
     ("F9",  "研究所102號房"),
     ("F10", "標賊龍蛋"),
@@ -230,7 +220,7 @@ class MainWindow:
                   ).pack(side=tk.LEFT)
 
     def _detect_minimap_bounds(self):
-        from Utility import detect_minimap_bounds
+        from util.Utility import detect_minimap_bounds
         gw = GameCharacter.shared_game_window()
         if gw is None or not gw.is_valid:
             print("[GUI] 遊戲視窗未偵測到，無法自動偵測邊界")
@@ -414,14 +404,6 @@ def on_press(key):
     if key.name == 'f2':
         print("F2 - BowmasterTask")
         bowmaster_task.toggle()
-    if key.name == 'f3':
-        print("F3 - SupportTask (back_time=1)")
-        support_task.set_back_time(1)
-        support_task.toggle()
-    if key.name == 'f4':
-        print("F4 - SupportTask (back_time=1.5)")
-        support_task.set_back_time(1.5)
-        support_task.toggle()
     if key.name == 'f5':
         mt = GameCharacter.shared_minimap()
         if mt is not None:
@@ -434,9 +416,6 @@ def on_press(key):
     if key.name == 'f6':
         print("F6 - MapTestTask")
         map_test_task.toggle()
-    if key.name == 'f7':
-        print("F7 - PriestTask")
-        priest_task.toggle()
     if key.name == 'f8':
         print("F8 - 標賊鬼女")
         ghost_women_task.toggle()
@@ -452,21 +431,12 @@ def on_press(key):
 
 
 # ── 初始化 Tasks ─────────────────────────────────────────────
-bowmaster_task       = BowmasterTask()
-find_boss_task       = FindBossTask()
-priest_task          = Priest()
-king_kong_task       = KingKongTask(find_boss_task)
-scholar_task         = ScholarTask(find_boss_task)
-night_lord_task      = NightLordTask()
-ghost_women_task     = GhostWomen()
-map_test_task        = MapTestTask()   # 初始化時自動載入最新地圖
-righter_task         = Righter()
-support_task         = SupportTask()
-zombie_mushking_task = ZombieMushKingTask()
-lab102room_task      = Lab102RoomTask()
-helper_task          = HelperTask()
-
-find_boss_task.register_boss_found_event('大菇菇', zombie_mushking_task)
+bowmaster_task   = BowmasterTask()
+night_lord_task  = NightLordTask()
+ghost_women_task = GhostWomen()
+map_test_task    = MapTestTask()   # 初始化時自動載入最新地圖
+lab102room_task  = Lab102RoomTask()
+helper_task      = HelperTask()
 
 config = load_config()
 

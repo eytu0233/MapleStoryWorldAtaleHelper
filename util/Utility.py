@@ -23,7 +23,7 @@ def recognize_text(hWnd_or_window, width_scale, height_scale, x_scale, y_scale):
     start_time = time.time()
 
     # 支援 GameWindow 或舊版 hwnd
-    from GameWindow import GameWindow
+    from controller.GameWindow import GameWindow
     if isinstance(hWnd_or_window, GameWindow):
         img_np = hWnd_or_window.capture(x_scale, y_scale, width_scale, height_scale)
         if img_np is None:
@@ -72,7 +72,7 @@ def detect_minimap_bounds(game_window) -> tuple[int, int, int, int] | None:
     Returns:
         (x0, y0, x1, y1) 視窗像素座標，找不到時回傳 None。
     """
-    from GameWindow import GameWindow
+    from controller.GameWindow import GameWindow
     if not game_window.is_valid:
         return None
     frame = game_window.capture(0.0, 0.0, 0.4, 0.6)

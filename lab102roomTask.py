@@ -2,7 +2,7 @@ import time
 
 import pyautogui
 
-from GameCharacter import GameCharacter, Job
+from controller.GameCharacter import GameCharacter
 
 # ── 地圖座標（百分比，0~100）─────────────────────────────────────
 _Y_UPPER_THRESH   = 25    # y < 此值 → 在2樓（可跳躍）
@@ -23,7 +23,7 @@ _NEAR_THRESHOLD   = 8     # 距觸發點幾% 內視為「接近」
 
 class Lab102RoomTask(GameCharacter):
     def __init__(self):
-        super().__init__(name='Lab102Room', job=Job.NIGHTLORD)
+        super().__init__(name='Lab102Room')
 
     @property
     def _px(self) -> float:

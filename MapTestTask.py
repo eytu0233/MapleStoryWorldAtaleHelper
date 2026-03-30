@@ -1,8 +1,8 @@
 import random
 
-from GameCharacter import GameCharacter, Job
-from MapData import MapData
-from MinimapTask import _RECORD_DECIMALS
+from controller.GameCharacter import GameCharacter
+from util.MapData import MapData
+from controller.MinimapTask import _RECORD_DECIMALS
 
 _MOVE_STEP = 0.4   # 每步移動持續時間（秒）
 
@@ -18,7 +18,7 @@ class MapTestTask(GameCharacter):
     """
 
     def __init__(self):
-        super().__init__(name='MapTest', job=Job.MAPTEST)
+        super().__init__(name='MapTest')
         self._direction = 'right'
         self._map_data: MapData | None = None
         self._map_points_set:   set[tuple[float, float]] = set()

@@ -1,7 +1,7 @@
 import threading
 import abc
 
-from GameDetector import get_artale_hwnd
+from util.GameDetector import get_artale_hwnd
 
 
 class MapleTask(abc.ABC):

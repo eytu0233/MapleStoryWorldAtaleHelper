@@ -2,7 +2,6 @@ import abc
 import re
 import threading
 from dataclasses import dataclass
-from enum import Enum, auto
 from typing import ClassVar
 
 import cv2
@@ -10,10 +9,9 @@ import easyocr
 import numpy as np
 import pyautogui
 
-from GameWindow import GameWindow
-from MapleTask import MapleTask
-from MinimapTask import MinimapTask
-from character_control import ArtaleController
+from .GameWindow import GameWindow
+from .MapleTask import MapleTask
+from .MinimapTask import MinimapTask
 
 # ── 共用 OCR reader（English-only，辨識數字最快）────────────────
 _ocr_reader: easyocr.Reader | None = None
@@ -36,18 +34,10 @@ _MP_REGION = (0.365, 0.922, 0.105, 0.042)
 _CHAR_COLOR_RGB       = (199, 168, 214)     # 名字邊框 RGB
 _CHAR_COLOR_TOLERANCE = 20                  # 每通道容差（±20）
 _CHAR_MIN_AREA        = 30                  # 最小輪廓面積（px²）
-_CHAR_SEARCH_Y_MIN    = 0.05                # 排除小地圖（上方 5%）
-_CHAR_SEARCH_Y_MAX    = 0.90                # 排除 HP/MP bar（下方 10%）
-
-
-class Job(Enum):
-    BOWMASTER = auto()
-    PRIEST = auto()
-    SCHOLAR = auto()
-    NIGHTLORD = auto()
-    GHOSTWOMEN = auto()
-    MAPTEST = auto()
-
+_CHAR_SEARCH_X_MIN    = 0
+_CHAR_SEARCH_X_MAX    = 1
+_CHAR_SEARCH_Y_MIN    = 0.40               # 排除小地圖（上方 40%）
+_CHAR_SEARCH_Y_MAX    = 0.80               # 排除 HP/MP bar（下方 20%）
 
 @dataclass
 class Position:
@@ -121,9 +111,11 @@ class GameCharacter(MapleTask, abc.ABC):
                 if frame is None:
                     continue
                 h, w = frame.shape[:2]
+                x0 = int(w * _CHAR_SEARCH_X_MIN)
+                x1 = int(w * _CHAR_SEARCH_X_MAX)
                 y0 = int(h * _CHAR_SEARCH_Y_MIN)
                 y1 = int(h * _CHAR_SEARCH_Y_MAX)
-                roi = frame[y0:y1]
+                roi = frame[y0:y1, x0:x1]
                 mask = (
                     (roi[:, :, 0] >= r0 - tol) & (roi[:, :, 0] <= r0 + tol) &
                     (roi[:, :, 1] >= g0 - tol) & (roi[:, :, 1] <= g0 + tol) &
@@ -135,7 +127,7 @@ class GameCharacter(MapleTask, abc.ABC):
                     largest = max(contours, key=cv2.contourArea)
                     if cv2.contourArea(largest) >= _CHAR_MIN_AREA:
                         cx, cy, cw, ch = cv2.boundingRect(largest)
-                        cls._shared_screen_x = cx
+                        cls._shared_screen_x = cx + x0
                         cls._shared_screen_y = cy + y0
                         cls._shared_screen_w = cw
                         cls._shared_screen_h = ch
@@ -165,13 +157,11 @@ class GameCharacter(MapleTask, abc.ABC):
             results = reader.readtext(processed, detail=0)
         return cls._parse_ratio(" ".join(results))
 
-    def __init__(self, name: str, job: Job,
-                 position: Position = None, config_path: str = "board_config.json"):
+    def __init__(self, name: str,
+                 position: Position = None):
         super().__init__()
         self.name = name
-        self.job = job
         self.position = position if position is not None else Position()
-        self.controller = ArtaleController(config_path)
 
         GameCharacter._init_shared()
         self.game_window = GameCharacter._shared_gw
@@ -315,6 +305,6 @@ class GameCharacter(MapleTask, abc.ABC):
         ...
 
     def __repr__(self):
-        return (f"{self.__class__.__name__}(name={self.name!r}, job={self.job.name}, "
+        return (f"{self.__class__.__name__}(name={self.name!r}, "
                 f"hp={self.hp:.1f}%, mp={self.mp:.1f}%, "
                 f"pos=({self.map_x:.2f}, {self.map_y:.2f}))")

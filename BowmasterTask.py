@@ -5,7 +5,7 @@ from enum import Enum, auto
 
 import pyautogui
 
-from GameCharacter import GameCharacter, Job
+from controller.GameCharacter import GameCharacter
 
 SKILL1_INTERVAL = 120
 SKILL2_INTERVAL = 60
@@ -28,7 +28,7 @@ class State(Enum):
 
 class BowmasterTask(GameCharacter):
     def __init__(self):
-        super().__init__(name='Bowmaster', job=Job.BOWMASTER)
+        super().__init__(name='Bowmaster')
         self.skill_ref_time = 0
         self.last_skill1 = 0
         self.last_skill2 = 0

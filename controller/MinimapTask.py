@@ -5,10 +5,10 @@ from typing import Callable
 import cv2
 import numpy as np
 
-from MapData import MapData
+from util.MapData import MapData
 
-from GameWindow import GameWindow
-from MapleTask import MapleTask
+from .GameWindow import GameWindow
+from .MapleTask import MapleTask
 
 # ── 小地圖固定邊界預設值（遊戲視窗像素座標）──────────────────────
 _DEFAULT_X0 = 66

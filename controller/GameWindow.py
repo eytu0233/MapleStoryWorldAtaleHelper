@@ -7,7 +7,7 @@ import pyautogui
 import win32gui
 import win32ui
 
-from GameDetector import get_artale_hwnd
+from util.GameDetector import get_artale_hwnd
 
 _POLL_INTERVAL = 0.5  # 視窗幾何輪詢間隔（秒）
 

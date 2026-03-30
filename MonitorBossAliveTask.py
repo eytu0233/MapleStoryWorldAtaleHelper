@@ -1,8 +1,8 @@
 import re
 import time
 
-import Utility
-from MapleTask import MapleTask
+import util.Utility as Utility
+from controller.MapleTask import MapleTask
 
 
 class MonitorBossAliveTask(MapleTask):

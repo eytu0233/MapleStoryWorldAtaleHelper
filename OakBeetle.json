@@ -1,0 +1,58 @@
+{
+  "_comment": "OakBeetle 地圖設定 — x/y 為小地圖比例（0.0 = 左/上，1.0 = 右/下）",
+  "minimap_bounds": {
+    "x": 35,
+    "y": 260,
+    "w": 300,
+    "h": 200
+  },
+  "timing": {
+    "_comment": "attack_interval 攻擊冷卻秒數；aux_interval 輔助技能釋放間隔秒數",
+    "attack_interval": 1.2,
+    "aux_interval": 270,
+    "aux_hold": 0.6,
+    "move_poll": 0.1,
+    "move_poll_near": 0.03,
+    "near_threshold": 0.05,
+    "y_detect_max": 0.15
+  },
+  "layers": [
+    {
+      "_comment": "climb_points: 此層可爬往上一層的 x 座標列表；空陣列代表頂層，巡邏完畢後下跳",
+      "id": 0,
+      "name": "最上層",
+      "y": 0.08,
+      "x_ranges": [[0.20, 0.69]],
+      "climb_points": []
+    },
+    {
+      "id": 1,
+      "name": "第1層",
+      "y": 0.36,
+      "x_ranges": [[0.01, 0.98]],
+      "climb_points": [0.30, 0.49, 0.68]
+    },
+    {
+      "id": 2,
+      "name": "第2層",
+      "y": 0.65,
+      "x_ranges": [[0.01, 0.98]],
+      "climb_points": [0.26, 0.49, 0.72]
+    },
+    {
+      "id": 3,
+      "name": "第3層",
+      "y": 0.89,
+      "x_ranges": [[0.32, 0.66]],
+      "climb_points": [0.49]
+    },
+    {
+      "_comment": "最下層左右兩段平台，各有獨立爬升點",
+      "id": 4,
+      "name": "最下層",
+      "y": 0.94,
+      "x_ranges": [[0.01, 0.31], [0.67, 0.98]],
+      "climb_points": [0.21, 0.75]
+    }
+  ]
+}

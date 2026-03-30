@@ -2,7 +2,7 @@ import random
 import time
 import pyautogui
 
-from MapleTask import MapleTask
+from controller.MapleTask import MapleTask
 
 
 class HelperTask(MapleTask):
