@@ -24,6 +24,3 @@ class Command(abc.ABC):
     def trigger_command(self):
         ...
 
-    @abc.abstractmethod
-    def post_command(self):
-        ...

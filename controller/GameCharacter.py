@@ -2,7 +2,7 @@ import abc
 import re
 import threading
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import ClassVar, Callable
 
 import cv2
 import easyocr
@@ -36,7 +36,7 @@ _CHAR_COLOR_TOLERANCE = 20                  # 每通道容差（±20）
 _CHAR_MIN_AREA        = 30                  # 最小輪廓面積（px²）
 _CHAR_SEARCH_X_MIN    = 0
 _CHAR_SEARCH_X_MAX    = 1
-_CHAR_SEARCH_Y_MIN    = 0.40               # 排除小地圖（上方 40%）
+_CHAR_SEARCH_Y_MIN    = 0.6               # 排除小地圖（上方 60%）
 _CHAR_SEARCH_Y_MAX    = 0.80               # 排除 HP/MP bar（下方 20%）
 
 @dataclass
@@ -59,9 +59,15 @@ class GameCharacter(MapleTask, abc.ABC):
     _shared_screen_y: ClassVar[int] = 0
     _shared_screen_w: ClassVar[int] = 0
     _shared_screen_h: ClassVar[int] = 0
+    _shared_screen_center_x: ClassVar[int] = 0
+    _shared_screen_center_y: ClassVar[int] = 0
     _shared_stat_stop: ClassVar[threading.Event] = threading.Event()
     _shared_init_lock: ClassVar[threading.Lock] = threading.Lock()
     _shared_monitors_running: ClassVar[bool] = False
+    # callback 格式：(threshold, condition, callback, fired)
+    # condition: 'below' 或 'above'；fired 為 list[bool] 以支援 mutable 邊緣觸發狀態
+    _hp_callbacks: ClassVar[list] = []
+    _mp_callbacks: ClassVar[list] = []
 
     @classmethod
     def _init_shared(cls):
@@ -78,12 +84,24 @@ class GameCharacter(MapleTask, abc.ABC):
                 threading.Thread(target=cls._screen_detect_loop, daemon=True).start()
 
     @classmethod
+    def _fire_callbacks(cls, callbacks: list, value: float):
+        for entry in callbacks:
+            threshold, condition, cb, fired = entry
+            triggered = value < threshold if condition == 'below' else value > threshold
+            if triggered and not fired[0]:
+                fired[0] = True
+                threading.Thread(target=cb, daemon=True).start()
+            elif not triggered:
+                fired[0] = False
+
+    @classmethod
     def _hp_monitor_loop(cls):
         while not cls._shared_stat_stop.wait(1.0):
             try:
                 pct = cls._read_stat(_HP_REGION)
                 if pct is not None:
                     cls._shared_hp = pct
+                    cls._fire_callbacks(cls._hp_callbacks, pct)
             except Exception as e:
                 print(f"[GameCharacter] HP monitor 異常: {e}")
 
@@ -94,6 +112,7 @@ class GameCharacter(MapleTask, abc.ABC):
                 pct = cls._read_stat(_MP_REGION)
                 if pct is not None:
                     cls._shared_mp = pct
+                    cls._fire_callbacks(cls._mp_callbacks, pct)
             except Exception as e:
                 print(f"[GameCharacter] MP monitor 異常: {e}")
 
@@ -131,8 +150,34 @@ class GameCharacter(MapleTask, abc.ABC):
                         cls._shared_screen_y = cy + y0
                         cls._shared_screen_w = cw
                         cls._shared_screen_h = ch
+                        cls._shared_screen_center_x = cx + x0 + cw // 2
+                        cls._shared_screen_center_y = cy + y0 + ch // 2
             except Exception as e:
                 print(f"[GameCharacter] screen detect 異常: {e}")
+
+    @classmethod
+    def register_hp_callback(cls, threshold: float, callback: Callable[[], None],
+                             condition: str = 'below'):
+        """
+        當 HP 滿足條件時觸發 callback（邊緣觸發，條件解除後才能再次觸發）。
+
+        :param threshold: HP 百分比閾值（0.0 ~ 100.0）
+        :param callback:  無參數的 callable，將於獨立執行緒中呼叫
+        :param condition: 'below'（低於）或 'above'（高於）
+        """
+        cls._hp_callbacks.append((threshold, condition, callback, [False]))
+
+    @classmethod
+    def register_mp_callback(cls, threshold: float, callback: Callable[[], None],
+                             condition: str = 'below'):
+        """
+        當 MP 滿足條件時觸發 callback（邊緣觸發，條件解除後才能再次觸發）。
+
+        :param threshold: MP 百分比閾值（0.0 ~ 100.0）
+        :param callback:  無參數的 callable，將於獨立執行緒中呼叫
+        :param condition: 'below'（低於）或 'above'（高於）
+        """
+        cls._mp_callbacks.append((threshold, condition, callback, [False]))
 
     @classmethod
     def shared_minimap(cls) -> MinimapTask | None:
@@ -202,6 +247,14 @@ class GameCharacter(MapleTask, abc.ABC):
     @property
     def screen_h(self) -> int:
         return GameCharacter._shared_screen_h
+
+    @property
+    def screen_center_x(self) -> int:
+        return GameCharacter._shared_screen_center_x
+
+    @property
+    def screen_center_y(self) -> int:
+        return GameCharacter._shared_screen_center_y
 
     # ── HP / MP 辨識（靜態輔助）────────────────────────────────
 

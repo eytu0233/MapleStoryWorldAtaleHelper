@@ -18,6 +18,7 @@ from MapTestTask import MapTestTask
 from NightLordTask import NightLordTask
 from GhostWomen import GhostWomen
 from lab102roomTask import Lab102RoomTask
+from job.Archbishop import Archbishop
 
 CONFIG_FILE = "config.json"
 
@@ -25,6 +26,7 @@ HOTKEY_MAP = [
     ("F2",  "弓手 (BowmasterTask)"),
     ("F5",  "地圖錄製 (toggle)"),
     ("F6",  "地圖測試 (MapTestTask)"),
+    ("F7",  "主教 (Archbishop)"),
     ("F8",  "標賊鬼女"),
     ("F9",  "研究所102號房"),
     ("F10", "標賊龍蛋"),
@@ -416,6 +418,9 @@ def on_press(key):
     if key.name == 'f6':
         print("F6 - MapTestTask")
         map_test_task.toggle()
+    if key.name == 'f7':
+        print("F7 - Archbishop")
+        archbishop_task.toggle()
     if key.name == 'f8':
         print("F8 - 標賊鬼女")
         ghost_women_task.toggle()
@@ -432,6 +437,7 @@ def on_press(key):
 
 # ── 初始化 Tasks ─────────────────────────────────────────────
 bowmaster_task   = BowmasterTask()
+archbishop_task  = Archbishop()
 night_lord_task  = NightLordTask()
 ghost_women_task = GhostWomen()
 map_test_task    = MapTestTask()   # 初始化時自動載入最新地圖

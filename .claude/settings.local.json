@@ -4,7 +4,20 @@
       "Bash(uv sync:*)",
       "Bash(uv pip:*)",
       "Bash(git revert:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(Test-Path \"C:\\\\Users\\\\Steve\\\\PycharmProjects\\\\MapleStoryWorldAtaleZhTWChannelChange_claude\\\\GhostWomen.py\")",
+      "Bash(git check-ignore:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"chore: add .worktrees/ to gitignore:*)",
+      "Bash(git worktree:*)",
+      "Bash(python test_merge_lines.py)",
+      "Bash(python -m py_compile Utility.py)",
+      "Bash(python -c \"from Utility import detect_minimap_bounds, _scan_horizontal_lines, _merge_nearby_lines; print\\(''所有函式成功導入''\\)\")",
+      "Bash(python -m py_compile GUI_main.py)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''Utility.py'', ''r'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''Utility.py 語法檢查通過''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''GUI_main.py'', ''r'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''GUI_main.py 語法檢查通過''\\)\")",
+      "Bash(git commit:*)",
+      "Bash(python -c \":*)"
     ]
   }
 }
