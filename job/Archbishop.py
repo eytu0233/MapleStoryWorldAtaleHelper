@@ -1,16 +1,21 @@
 import threading
 
 from controller.CommandGameCharacter import CommandGameCharacter
-from job.ArchbishopCommand import HolySymbol, AngelBlessing, HolyLight, MapleBlessing, HealCommand, DragonCommand, SearchStepCommand, AttackCommand
+from controller.GameCharacter import GameCharacter
+from job.ArchbishopCommand import (HolySymbol, AngelBlessing, HolyLight, MapleBlessing,
+                                   HealCommand, DragonCommand, SearchStepCommand,
+                                   AttackCommand, SkyAngryCommand, sky_angry_position_ok)
 
-_BUFF_INTERVAL   = 270  # 秒
-_DRAGON_INTERVAL = 90   # 秒
+_BUFF_INTERVAL      = 270  # 秒
+_DRAGON_INTERVAL    = 90   # 秒
+_SKY_ANGRY_COOLDOWN = 2.0  # 秒
 
 
 class Archbishop(CommandGameCharacter):
 
     def __init__(self):
         super().__init__(name='Archbishop')
+        self._sky_angry_eid: int | None = None
 
     def _enqueue_buffs(self):
         for cmd in (HolySymbol(), AngelBlessing(), HolyLight(), MapleBlessing()):
@@ -30,6 +35,9 @@ class Archbishop(CommandGameCharacter):
             self._buff_timer.cancel()
         if hasattr(self, '_dragon_timer'):
             self._dragon_timer.cancel()
+        if self._sky_angry_eid is not None:
+            GameCharacter.unregister_composite_event(self._sky_angry_eid)
+            self._sky_angry_eid = None
         super().stop()
 
     # ── 抽象方法實作 ─────────────────────────────────────────────
@@ -39,6 +47,15 @@ class Archbishop(CommandGameCharacter):
         self.command_queue.put(SearchStepCommand(self, self.command_queue))
         self._enqueue_buffs()
         self._enqueue_dragon()
+        self._sky_angry_eid = GameCharacter.register_composite_event(
+            condition=lambda: (
+                GameCharacter._shared_hp >= 100.0 and
+                GameCharacter._shared_mp > 50.0 and
+                sky_angry_position_ok(self)
+            ),
+            callback=lambda: self.priority_command_queue.put(SkyAngryCommand(self)),
+            cooldown=_SKY_ANGRY_COOLDOWN,
+        )
         t = threading.Timer(2.0, self.priority_command_queue.put, args=(AttackCommand(self.priority_command_queue),))
         t.daemon = True
         t.start()

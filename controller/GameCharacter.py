@@ -1,6 +1,7 @@
 import abc
 import re
 import threading
+import time
 from dataclasses import dataclass
 from typing import ClassVar, Callable
 
@@ -28,7 +29,7 @@ def _get_ocr_reader() -> easyocr.Reader:
 
 # ── HP / MP 狀態列在視窗中的比例座標 ────────────────────────────
 _HP_REGION = (0.25, 0.922, 0.105, 0.042)   # (x, y, w, h) 比例
-_MP_REGION = (0.365, 0.922, 0.105, 0.042)
+_MP_REGION = (0.41, 0.922, 0.105, 0.042)
 
 # ── 角色名字邊框顏色偵測設定 ─────────────────────────────────────
 _CHAR_COLOR_RGB       = (199, 168, 214)     # 名字邊框 RGB
@@ -68,6 +69,11 @@ class GameCharacter(MapleTask, abc.ABC):
     # condition: 'below' 或 'above'；fired 為 list[bool] 以支援 mutable 邊緣觸發狀態
     _hp_callbacks: ClassVar[list] = []
     _mp_callbacks: ClassVar[list] = []
+    # composite event 格式：{'id', 'condition', 'callback', 'cooldown', 'last_fired'}
+    # condition: Callable[[], bool]；cooldown: 秒；last_fired: monotonic 時間戳（初值 0.0）
+    _composite_events: ClassVar[list] = []
+    _composite_event_counter: ClassVar[int] = 0
+    _composite_events_lock: ClassVar[threading.Lock] = threading.Lock()
 
     @classmethod
     def _init_shared(cls):
@@ -82,6 +88,7 @@ class GameCharacter(MapleTask, abc.ABC):
                 threading.Thread(target=cls._hp_monitor_loop, daemon=True).start()
                 threading.Thread(target=cls._mp_monitor_loop, daemon=True).start()
                 threading.Thread(target=cls._screen_detect_loop, daemon=True).start()
+                threading.Thread(target=cls._composite_monitor_loop, daemon=True).start()
 
     @classmethod
     def _fire_callbacks(cls, callbacks: list, value: float):
@@ -96,7 +103,7 @@ class GameCharacter(MapleTask, abc.ABC):
 
     @classmethod
     def _hp_monitor_loop(cls):
-        while not cls._shared_stat_stop.wait(1.0):
+        while not cls._shared_stat_stop.wait(0.1):
             try:
                 pct = cls._read_stat(_HP_REGION)
                 if pct is not None:
@@ -107,7 +114,7 @@ class GameCharacter(MapleTask, abc.ABC):
 
     @classmethod
     def _mp_monitor_loop(cls):
-        while not cls._shared_stat_stop.wait(1.0):
+        while not cls._shared_stat_stop.wait(0.1):
             try:
                 pct = cls._read_stat(_MP_REGION)
                 if pct is not None:
@@ -178,6 +185,55 @@ class GameCharacter(MapleTask, abc.ABC):
         :param condition: 'below'（低於）或 'above'（高於）
         """
         cls._mp_callbacks.append((threshold, condition, callback, [False]))
+
+    @classmethod
+    def _composite_monitor_loop(cls):
+        """每 0.1 s 輪詢所有 composite event；條件成立且冷卻已過則觸發 callback。"""
+        while not cls._shared_stat_stop.wait(0.1):
+            now = time.monotonic()
+            with cls._composite_events_lock:
+                entries = list(cls._composite_events)
+            for entry in entries:
+                try:
+                    triggered = entry['condition']()
+                except Exception:
+                    continue
+                if triggered and (now - entry['last_fired']) >= entry['cooldown']:
+                    entry['last_fired'] = now
+                    threading.Thread(target=entry['callback'], daemon=True).start()
+
+    @classmethod
+    def register_composite_event(
+        cls,
+        condition: Callable[[], bool],
+        callback: Callable[[], None],
+        cooldown: float = 1.0,
+    ) -> int:
+        """
+        當 condition() 為 True 且距上次觸發超過 cooldown 秒時呼叫 callback。
+
+        :param condition: 無參數，回傳 bool；可同時檢查 HP、MP、位置等任意組合
+        :param callback:  無參數的 callable，將於獨立 daemon thread 中呼叫
+        :param cooldown:  兩次觸發的最短間隔（秒）
+        :return:          event ID，可傳入 unregister_composite_event 取消
+        """
+        with cls._composite_events_lock:
+            eid = cls._composite_event_counter
+            cls._composite_event_counter += 1
+            cls._composite_events.append({
+                'id':         eid,
+                'condition':  condition,
+                'callback':   callback,
+                'cooldown':   cooldown,
+                'last_fired': 0.0,
+            })
+        return eid
+
+    @classmethod
+    def unregister_composite_event(cls, eid: int) -> None:
+        """取消以 register_composite_event 註冊的 event。"""
+        with cls._composite_events_lock:
+            cls._composite_events = [e for e in cls._composite_events if e['id'] != eid]
 
     @classmethod
     def shared_minimap(cls) -> MinimapTask | None:

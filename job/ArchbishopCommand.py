@@ -454,3 +454,60 @@ class AttackCommand(Command):
         t = threading.Timer(delay, self._queue.put, args=(self,))
         t.daemon = True
         t.start()
+
+
+# ── SkyAngry ──────────────────────────────────────────────────────
+
+_SKY_ANGRY_X_CENTER = 0.40
+_SKY_ANGRY_X_TOL    = 0.05
+
+
+def sky_angry_position_ok(char) -> bool:
+    """角色是否在天怒可施放位置（mid/bot 層，x ∈ [0.35, 0.45]）。"""
+    return (_get_layer(char) in ('mid', 'bot') and
+            _SKY_ANGRY_X_CENTER - _SKY_ANGRY_X_TOL
+            <= char.map_x <=
+            _SKY_ANGRY_X_CENTER + _SKY_ANGRY_X_TOL)
+
+
+class SkyAngryCommand(Command):
+    """
+    天怒（攻擊技能）：施放條件如下，任一不符則靜默跳過：
+      - HP 滿血（>= 100%）
+      - MP > 50%
+      - 位於第二層（mid）或第三層（bot）
+      - 小地圖 x 在 0.35 ~ 0.45
+    施放方式：按住 d 1 秒（priority，可被更高優先中斷）。
+    """
+
+    def __init__(self, char):
+        super().__init__(CommandType.CONDITION)
+        self._char = char
+
+    def trigger_command(self):
+        self.interrupt_event.clear()
+
+        hp    = GameCharacter._shared_hp
+        mp    = GameCharacter._shared_mp
+        layer = _get_layer(self._char)
+        x     = self._char.map_x
+
+        if (hp < 100.0 or mp <= 50.0 or
+                layer not in ('mid', 'bot') or
+                not (_SKY_ANGRY_X_CENTER - _SKY_ANGRY_X_TOL
+                     <= x <=
+                     _SKY_ANGRY_X_CENTER + _SKY_ANGRY_X_TOL)):
+            print(f'[PRIORITY][SkyAngry] 條件不足，跳過 '
+                  f'hp={hp:.1f}% mp={mp:.1f}% layer={layer} x={x:.2f}')
+            return
+
+        print(f'[PRIORITY][SkyAngry] 天怒施放 '
+              f'hp={hp:.1f}% mp={mp:.1f}% layer={layer} x={x:.2f}')
+        pyautogui.keyDown('d')
+        self.interrupt_event.wait(1.0)
+        pyautogui.keyUp('d')
+
+        if self.interrupt_event.is_set():
+            print('[PRIORITY][SkyAngry] 被打斷')
+        else:
+            print('[PRIORITY][SkyAngry] 完成')
