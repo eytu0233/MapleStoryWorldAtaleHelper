@@ -9,6 +9,7 @@ from pynput.keyboard import Listener
 from util.DebugOverlay import DebugOverlay
 from BowmasterTask import BowmasterTask
 from controller.GameCharacter import GameCharacter
+from controller.MapleTask import MapleTask
 import win32gui
 
 from util.GameDetector import get_artale_hwnd
@@ -19,6 +20,7 @@ from NightLordTask import NightLordTask
 from GhostWomen import GhostWomen
 from lab102roomTask import Lab102RoomTask
 from job.Archbishop import Archbishop
+from discord_bot.discord_bot import DiscordBot
 
 CONFIG_FILE = "config.json"
 
@@ -446,6 +448,13 @@ helper_task      = HelperTask()
 
 config = load_config()
 
+# ── Discord Bot ───────────────────────────────────────────────
+discord_bot = None
+try:
+    discord_bot = DiscordBot(CONFIG_FILE)
+except (ValueError, FileNotFoundError) as e:
+    print(f"[Discord] 機器人初始化失敗：{e}")
+
 # 啟動時套用已儲存的小地圖邊界
 _mm = config.get("minimap_bounds", {})
 if _mm:
@@ -463,4 +472,36 @@ app = MainWindow(root, debug_overlay)
 listener = Listener(on_press=on_press)
 listener.start()
 
+if discord_bot is not None:
+    def _discord_status():
+        return {name: task.is_running for name, task in MapleTask.all().items()}
+
+    def _discord_start(name: str) -> str:
+        task = MapleTask.get(name)
+        if task is None:
+            return f"找不到任務：{name}（可用：{', '.join(MapleTask.all())}）"
+        task.start()
+        return f"已啟動 {name}"
+
+    def _discord_stop(name: str) -> str:
+        task = MapleTask.get(name)
+        if task is None:
+            return f"找不到任務：{name}（可用：{', '.join(MapleTask.all())}）"
+        task.stop()
+        return f"已停止 {name}"
+
+    discord_bot.register_status_callback(_discord_status)
+    discord_bot.register_start_callback(_discord_start)
+    discord_bot.register_stop_callback(_discord_stop)
+    discord_bot.start()
+
+
+def on_close():
+    if discord_bot is not None:
+        discord_bot.stop()
+    listener.stop()
+    root.destroy()
+
+
+root.protocol("WM_DELETE_WINDOW", on_close)
 root.mainloop()

@@ -42,6 +42,52 @@ uv run python main.py
 
 ---
 
+## Discord Bot 設定
+
+### 1. 建立 Discord Bot 並取得 Token
+
+1. 前往 [Discord Developer Portal](https://discord.com/developers/applications)。
+2. 點擊 **New Application**，輸入名稱後建立。
+3. 在左側選單選擇 **Bot**。
+4. 點擊 **Reset Token**（或 **Copy**）取得你的 Token，請妥善保管。
+5. 在 **Privileged Gateway Intents** 區塊，開啟 **Message Content Intent**（機器人讀取訊息內容所必需）。
+
+### 2. 邀請機器人進入伺服器
+
+1. 在左側選擇 **OAuth2** → **URL Generator**。
+2. **Scopes** 勾選 `bot`。
+3. **Bot Permissions** 勾選 `Read Messages/View Channels` 與 `Send Messages`。
+4. 複製產生的網址到瀏覽器，將機器人邀請進你的伺服器。
+
+### 3. 設定 config.json
+
+將 Token 與頻道 ID 填入 `config.json`：
+
+```json
+{
+  "discord": {
+    "token": "你的 Bot Token",
+    "channel_id": 123456789012345678,
+    "allowed_user_ids": []
+  }
+}
+```
+
+> `channel_id`：在 Discord 頻道上按右鍵 → **複製頻道 ID**（需先在「使用者設定 → 進階」啟用「開發者模式」）。
+> `allowed_user_ids`：空陣列表示允許所有人使用指令；填入使用者 ID 則只允許指定人員。
+
+### 4. 可用指令
+
+| 指令 | 說明 |
+|------|------|
+| `!ping` | 確認機器人在線，回傳延遲 |
+| `!status` | 查詢各任務執行狀態 |
+| `!start <任務名稱>` | 啟動指定任務 |
+| `!stop <任務名稱>` | 停止指定任務 |
+| `!help` | 顯示指令列表 |
+
+---
+
 ## 常用指令
 
 ```bash
