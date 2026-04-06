@@ -2,6 +2,9 @@ import threading
 import abc
 
 from util.GameDetector import get_artale_hwnd
+from util.logger import MSLogger
+
+_logger = MSLogger('MapleTask')
 
 
 class _SingletonABCMeta(abc.ABCMeta):
@@ -21,7 +24,7 @@ class MapleTask(abc.ABC, metaclass=_SingletonABCMeta):
     def detect_hwnd():
         hwnd = get_artale_hwnd()
         if hwnd == 0:
-            print("[MapleTask] 找不到 Artale 視窗")
+            _logger.warning("[MapleTask] 找不到 Artale 視窗")
         return hwnd
 
     def __init__(self):
@@ -57,7 +60,7 @@ class MapleTask(abc.ABC, metaclass=_SingletonABCMeta):
             self.task()
 
     def start(self):
-        print('MapleTask start')
+        _logger.info('MapleTask start')
         if self.is_running:
             return
         self.is_running = True
@@ -68,7 +71,7 @@ class MapleTask(abc.ABC, metaclass=_SingletonABCMeta):
         self.start_event_notify()
 
     def stop(self):
-        print('MapleTask stop')
+        _logger.info('MapleTask stop')
         if not self.is_running:
             return
         self.is_running = False

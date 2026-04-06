@@ -22,6 +22,9 @@ from lab102roomTask import Lab102RoomTask
 from job.Archbishop import Archbishop
 from job.Support_bot import SupportBot
 from discord_bot.discord_bot import DiscordBot
+from util.logger import MSLogger
+
+_logger = MSLogger('GUI')
 
 CONFIG_FILE = "config.json"
 
@@ -229,18 +232,18 @@ class MainWindow:
         from util.Utility import detect_minimap_bounds
         gw = GameCharacter.shared_game_window()
         if gw is None or not gw.is_valid:
-            print("[GUI] 遊戲視窗未偵測到，無法自動偵測邊界")
+            _logger.info("[GUI] 遊戲視窗未偵測到，無法自動偵測邊界")
             return
         result = detect_minimap_bounds(gw)
         if result is None:
-            print("[GUI] 小地圖邊界自動偵測失敗，請手動設定")
+            _logger.info("[GUI] 小地圖邊界自動偵測失敗，請手動設定")
             return
         x0, y0, x1, y1 = result
         self._mm_x.set(str(x0))
         self._mm_y.set(str(y0))
         self._mm_w.set(str(x1 - x0))
         self._mm_h.set(str(y1 - y0))
-        print(f"[GUI] 自動偵測結果：x={x0} y={y0} w={x1-x0} h={y1-y0}")
+        _logger.info(f"[GUI] 自動偵測結果：x={x0} y={y0} w={x1-x0} h={y1-y0}")
         self._apply_minimap_bounds()
 
     def _apply_minimap_bounds(self):
@@ -250,14 +253,14 @@ class MainWindow:
             w = int(self._mm_w.get())
             h = int(self._mm_h.get())
         except ValueError:
-            print("[GUI] 邊界數值格式錯誤")
+            _logger.info("[GUI] 邊界數值格式錯誤")
             return
         mt = GameCharacter.shared_minimap()
         if mt is not None:
             mt.set_bounds(x, y, x + w, y + h)
         config["minimap_bounds"] = {"x": x, "y": y, "w": w, "h": h}
         save_config(config)
-        print(f"[GUI] 小地圖邊界已套用：x={x} y={y} w={w} h={h}")
+        _logger.info(f"[GUI] 小地圖邊界已套用：x={x} y={y} w={w} h={h}")
 
     def _load_minimap_bounds(self):
         path = filedialog.askopenfilename(
@@ -273,14 +276,14 @@ class MainWindow:
             x = int(mm["x"]); y = int(mm["y"])
             w = int(mm["w"]); h = int(mm["h"])
         except Exception as e:
-            print(f"[GUI] 讀取邊界 JSON 失敗：{e}")
+            _logger.info(f"[GUI] 讀取邊界 JSON 失敗：{e}")
             return
         self._mm_x.set(str(x))
         self._mm_y.set(str(y))
         self._mm_w.set(str(w))
         self._mm_h.set(str(h))
         self._apply_minimap_bounds()
-        print(f"[GUI] 已從檔案載入邊界：x={x} y={y} w={w} h={h}")
+        _logger.info(f"[GUI] 已從檔案載入邊界：x={x} y={y} w={w} h={h}")
 
     def _save_minimap_bounds_to_file(self):
         try:
@@ -289,7 +292,7 @@ class MainWindow:
             w = int(self._mm_w.get())
             h = int(self._mm_h.get())
         except ValueError:
-            print("[GUI] 邊界數值格式錯誤")
+            _logger.info("[GUI] 邊界數值格式錯誤")
             return
         path = filedialog.asksaveasfilename(
             title="儲存小地圖邊界",
@@ -302,7 +305,7 @@ class MainWindow:
         data = {"minimap_bounds": {"x": x, "y": y, "w": w, "h": h}}
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        print(f"[GUI] 小地圖邊界已儲存至：{path}")
+        _logger.info(f"[GUI] 小地圖邊界已儲存至：{path}")
 
     def _refresh_map_list(self):
         names = MapData.list_names()
@@ -318,12 +321,12 @@ class MainWindow:
             map_test_task.load_map(name)
             self.map_name_var.set(name)
         except Exception as e:
-            print(f"[GUI] 載入地圖失敗：{e}")
+            _logger.info(f"[GUI] 載入地圖失敗：{e}")
 
     def _save_map(self):
         name = self.map_name_var.get().strip()
         if not name:
-            print("[GUI] 請輸入地圖名稱")
+            _logger.info("[GUI] 請輸入地圖名稱")
             return
         mt = GameCharacter.shared_minimap()
         if mt is None:
@@ -408,37 +411,37 @@ def on_press(key):
     if not hasattr(key, 'name'):
         return
     if key.name == 'f2':
-        print("F2 - BowmasterTask")
+        _logger.info("F2 - BowmasterTask")
         bowmaster_task.toggle()
     if key.name == 'f4':
-        print("F4 - SupportBot")
+        _logger.info("F4 - SupportBot")
         support_bot_task.toggle()
     if key.name == 'f5':
         mt = GameCharacter.shared_minimap()
         if mt is not None:
             if mt.recording:
-                print("F5 - 地圖錄製 停止")
+                _logger.info("F5 - 地圖錄製 停止")
                 mt.stop_recording()
             else:
-                print("F5 - 地圖錄製 開始")
+                _logger.info("F5 - 地圖錄製 開始")
                 mt.start_recording()
     if key.name == 'f6':
-        print("F6 - MapTestTask")
+        _logger.info("F6 - MapTestTask")
         map_test_task.toggle()
     if key.name == 'f7':
-        print("F7 - Archbishop")
+        _logger.info("F7 - Archbishop")
         archbishop_task.toggle()
     if key.name == 'f8':
-        print("F8 - 標賊鬼女")
+        _logger.info("F8 - 標賊鬼女")
         ghost_women_task.toggle()
     if key.name == 'f9':
-        print("F9 - 研究所102號房")
+        _logger.info("F9 - 研究所102號房")
         lab102room_task.toggle()
     if key.name == 'f10':
-        print("F10 - 標賊龍蛋")
+        _logger.info("F10 - 標賊龍蛋")
         night_lord_task.toggle()
     if key.name == 'f11':
-        print("F11 - HelperTask")
+        _logger.info("F11 - HelperTask")
         helper_task.toggle()
 
 
@@ -459,7 +462,7 @@ discord_bot = None
 try:
     discord_bot = DiscordBot(CONFIG_FILE)
 except (ValueError, FileNotFoundError) as e:
-    print(f"[Discord] 機器人初始化失敗：{e}")
+    _logger.info(f"[Discord] 機器人初始化失敗：{e}")
 
 archbishop_task._discord_bot = discord_bot
 

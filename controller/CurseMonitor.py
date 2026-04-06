@@ -17,8 +17,11 @@ from typing import Callable
 import cv2
 import numpy as np
 
+from util.logger import MSLogger
 from .GameWindow import GameWindow
 from .MapleTask import MapleTask
+
+_logger = MSLogger('CurseMonitor')
 
 # ── 截圖區域（比例座標：x, y, w, h）────────────────────────────
 _SCAN_REGION = (0.30, 0.20, 0.50, 0.25)
@@ -82,7 +85,7 @@ class CurseMonitor(MapleTask):
     # ── 主迴圈 ───────────────────────────────────────────────────
 
     def task(self):
-        print("[CurseMonitor] 啟動")
+        _logger.info("[CurseMonitor] 啟動")
         while True:
             if self.wait_stop_event(_POLL_INTERVAL):
                 break
@@ -105,9 +108,9 @@ class CurseMonitor(MapleTask):
 
                 self._last_notified = now
                 self._notify_fn("⚠️ 詛咒狀態！必須解放符文才能解除詛咒！")
-                print("[CurseMonitor] 詛咒偵測，已發送通知")
+                _logger.info("[CurseMonitor] 詛咒偵測，已發送通知")
 
             except Exception as e:
-                print(f"[CurseMonitor] 偵測異常: {e}")
+                _logger.error(f"[CurseMonitor] 偵測異常: {e}")
 
-        print("[CurseMonitor] 停止")
+        _logger.info("[CurseMonitor] 停止")

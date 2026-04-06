@@ -10,7 +10,10 @@ import easyocr
 import numpy as np
 import pyautogui
 
+from util.logger import MSLogger
 from .GameWindow import GameWindow
+
+_logger = MSLogger('GameCharacter')
 from .MapleTask import MapleTask
 from .MinimapTask import MinimapTask
 
@@ -113,7 +116,7 @@ class GameCharacter(MapleTask, abc.ABC):
                     cls._shared_hp = pct
                     cls._fire_callbacks(cls._hp_callbacks, pct)
             except Exception as e:
-                print(f"[GameCharacter] HP monitor 異常: {e}")
+                _logger.error(f"[GameCharacter] HP monitor 異常: {e}")
 
     @classmethod
     def _mp_monitor_loop(cls):
@@ -124,7 +127,7 @@ class GameCharacter(MapleTask, abc.ABC):
                     cls._shared_mp = pct
                     cls._fire_callbacks(cls._mp_callbacks, pct)
             except Exception as e:
-                print(f"[GameCharacter] MP monitor 異常: {e}")
+                _logger.error(f"[GameCharacter] MP monitor 異常: {e}")
 
     @classmethod
     def _screen_detect_loop(cls):
@@ -163,7 +166,7 @@ class GameCharacter(MapleTask, abc.ABC):
                         cls._shared_screen_center_x = cx + x0 + cw // 2
                         cls._shared_screen_center_y = cy + y0 + ch // 2
             except Exception as e:
-                print(f"[GameCharacter] screen detect 異常: {e}")
+                _logger.error(f"[GameCharacter] screen detect 異常: {e}")
 
     @classmethod
     def register_hp_callback(cls, threshold: float, callback: Callable[[], None],

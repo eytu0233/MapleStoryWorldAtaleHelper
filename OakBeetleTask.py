@@ -2,6 +2,9 @@ import json
 import time
 
 from controller.GameCharacter import GameCharacter
+from util.logger import MSLogger
+
+_logger = MSLogger('OakBeetleTask')
 
 _CONFIG_PATH = 'OakBeetle.json'
 
@@ -35,7 +38,7 @@ class OakBeetleTask(GameCharacter):
         self._y_detect_max    = t.get('y_detect_max',    0.15)
         # 依 y 值由小到大排序（最上層優先），方便 _detect_layer 最近鄰搜尋
         self._layers = sorted(cfg.get('layers', []), key=lambda l: l['y'])
-        print(f"[OakBeetleTask] 設定載入完成，共 {len(self._layers)} 層")
+        _logger.info(f"[OakBeetleTask] 設定載入完成，共 {len(self._layers)} 層")
 
     # ── 抽象方法實作 ──────────────────────────────────────────────
 
@@ -88,11 +91,11 @@ class OakBeetleTask(GameCharacter):
     # ── 主 Task ──────────────────────────────────────────────────
 
     def task(self):
-        print("OakBeetleTask starting")
+        _logger.info("OakBeetleTask starting")
         self._load_config()
 
         if self._cast_aux():
-            print("OakBeetleTask end")
+            _logger.info("OakBeetleTask end")
             return
 
         self._last_attack = time.time()
@@ -123,12 +126,12 @@ class OakBeetleTask(GameCharacter):
                 x_ranges = layer.get('x_ranges', [[0.0, 1.0]])
                 x_min = x_ranges[0][0]
                 x_max = x_ranges[-1][1]
-                print(f"[OakBeetleTask] {name}，巡邏 x={x_min:.2f}~{x_max:.2f}")
+                _logger.info(f"[OakBeetleTask] {name}，巡邏 x={x_min:.2f}~{x_max:.2f}")
                 if self._walk_to_x(x_max):
                     break
                 if self._walk_to_x(x_min):
                     break
-                print(f"[OakBeetleTask] {name} 巡邏完，下跳")
+                _logger.info(f"[OakBeetleTask] {name} 巡邏完，下跳")
                 if self.move_down():
                     break
                 if self.wait_stop_event(0.8):
@@ -136,13 +139,13 @@ class OakBeetleTask(GameCharacter):
             else:
                 # ── 非頂層：走向最近爬升點後往上爬 ──────────────────
                 nearest_cp = min(climb_points, key=lambda cp: abs(cp - self.map_x))
-                print(f"[OakBeetleTask] {name}，爬升點 x={nearest_cp:.2f}")
+                _logger.info(f"[OakBeetleTask] {name}，爬升點 x={nearest_cp:.2f}")
                 if self._walk_to_x(nearest_cp):
                     break
-                print(f"[OakBeetleTask] {name}，開始爬升")
+                _logger.info(f"[OakBeetleTask] {name}，開始爬升")
                 if self.move_up():
                     break
                 if self.wait_stop_event(0.3):
                     break
 
-        print("OakBeetleTask end")
+        _logger.info("OakBeetleTask end")

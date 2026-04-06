@@ -7,6 +7,9 @@ from enum import Enum, auto
 import pyautogui
 
 from controller.GameCharacter import GameCharacter
+from util.logger import MSLogger
+
+_logger = MSLogger('NightLordTask')
 
 SKILL1_INTERVAL = 270
 SKILL2_INTERVAL = 270
@@ -66,7 +69,7 @@ class NightLordTask(GameCharacter):
 
         def timer_loop(interval, state, aux_skill):
             while not self._timer_stop.wait(interval):
-                print(f"[NightLordTask] Timer fired: {state} aux_skill={aux_skill}")
+                _logger.info(f"[NightLordTask] Timer fired: {state} aux_skill={aux_skill}")
                 self._event_queue.append((state, aux_skill))
 
         def random_timer_loop():
@@ -74,7 +77,7 @@ class NightLordTask(GameCharacter):
                 interval = random.uniform(SKILLX_INTERVAL_MIN, SKILLX_INTERVAL_MAX)
                 if self._timer_stop.wait(interval):
                     break
-                print(f"[NightLordTask] Timer fired: {State.AUX} aux_skill=x")
+                _logger.info(f"[NightLordTask] Timer fired: {State.AUX} aux_skill=x")
                 self._event_queue.append((State.AUX, 'x'))
 
         for interval, state, aux_skill in [
@@ -94,7 +97,7 @@ class NightLordTask(GameCharacter):
 
         def fire():
             if not timer_stop.wait(STEP_INTERVAL) and self._step_gen == gen:
-                print("[NightLordTask] Step timer fired")
+                _logger.info("[NightLordTask] Step timer fired")
                 self._event_queue.append((State.STEP, None))
 
         threading.Thread(target=fire, daemon=True).start()
@@ -106,10 +109,10 @@ class NightLordTask(GameCharacter):
     # --- InitState ---
 
     def _init_pre(self):
-        print("[NightLordTask] InitState: pre")
+        _logger.info("[NightLordTask] InitState: pre")
 
     def _init_process(self) -> bool:
-        print("[NightLordTask] InitState: process")
+        _logger.info("[NightLordTask] InitState: process")
         if self._hold_key('1', AUX_INTERVAL):
             return True
         if self._hold_key('2', AUX_INTERVAL):
@@ -123,13 +126,13 @@ class NightLordTask(GameCharacter):
         return False
 
     def _init_post(self) -> bool:
-        print("[NightLordTask] InitState: post")
+        _logger.info("[NightLordTask] InitState: post")
         return self.wait_stop_event(1)
 
     # --- AttackState ---
 
     def _attack_pre(self) -> bool:
-        print("[NightLordTask] AttackState: pre")
+        _logger.info("[NightLordTask] AttackState: pre")
         self._schedule_step()   # 攻擊開始，重新計時 10 秒
         # 停下來釋放 x 技能
         if self.wait_stop_event(0.5):
@@ -139,7 +142,7 @@ class NightLordTask(GameCharacter):
         return False
 
     def _attack_post(self):
-        print("[NightLordTask] AttackState: post")
+        _logger.info("[NightLordTask] AttackState: post")
         pyautogui.keyUp('c')
 
     # --- StepState ---
@@ -182,7 +185,7 @@ class NightLordTask(GameCharacter):
         mt = self.minimap_task
         eid = mt.register_pos_event(stop_condition, stop_event.set, once=True)
 
-        print(f"[NightLordTask] StepState: dir={self._step_dir} x={x:.3f}")
+        _logger.info(f"[NightLordTask] StepState: dir={self._step_dir} x={x:.3f}")
         try:
             while not stop_event.is_set():
                 if self._hold_key(self._step_dir, _STEP_POLL):
@@ -191,12 +194,12 @@ class NightLordTask(GameCharacter):
             mt.unregister_pos_event(eid)
 
         end_x = self.map_x
-        print(f"[NightLordTask] StepState: done x={end_x:.3f}")
+        _logger.info(f"[NightLordTask] StepState: done x={end_x:.3f}")
         if end_x >= _STEP_X_LEFT or end_x <= _STEP_X_RIGHT:
             # 到達邊界：下次停在中心附近
             self._heading_to_boundary = False
             reverse_dir = 'right' if self._step_dir == 'left' else 'left'
-            print(f"[NightLordTask] StepState: at boundary, reversing {reverse_dir} 0.2s")
+            _logger.info(f"[NightLordTask] StepState: at boundary, reversing {reverse_dir} 0.2s")
             if self._hold_key(reverse_dir, 0.2):
                 return True
         else:
@@ -207,7 +210,7 @@ class NightLordTask(GameCharacter):
     # --- AuxState ---
 
     def _aux_process(self, skill) -> bool:
-        print(f"[NightLordTask] AuxState: process (skill={skill})")
+        _logger.info(f"[NightLordTask] AuxState: process (skill={skill})")
         if self.wait_stop_event(0.5):
             return True
         if skill == 1:
@@ -231,18 +234,18 @@ class NightLordTask(GameCharacter):
     # --- State machine runner ---
 
     def task(self):
-        print("NightLordTask starting")
+        _logger.info("NightLordTask starting")
         self._event_queue.clear()
         self._start_aux_timers()
 
         self._init_pre()
         if self._init_process():
             self._cancel_timers()
-            print("NightLordTask end")
+            _logger.info("NightLordTask end")
             return
         if self._init_post():
             self._cancel_timers()
-            print("NightLordTask end")
+            _logger.info("NightLordTask end")
             return
 
         state = State.ATTACK
@@ -260,7 +263,7 @@ class NightLordTask(GameCharacter):
                         break
                     if self._event_queue:
                         state, aux_skill = self._pop_event()
-                        print(f"[NightLordTask] AttackState: → {state} aux_skill={aux_skill}")
+                        _logger.info(f"[NightLordTask] AttackState: → {state} aux_skill={aux_skill}")
                         break
 
                 self._attack_post()
@@ -278,4 +281,4 @@ class NightLordTask(GameCharacter):
                 state, aux_skill = self._pop_event() if self._event_queue else (State.ATTACK, None)
 
         self._cancel_timers()
-        print("NightLordTask end")
+        _logger.info("NightLordTask end")

@@ -3,6 +3,9 @@ import time
 import pyautogui
 
 from controller.MapleTask import MapleTask
+from util.logger import MSLogger
+
+_logger = MSLogger('HelperTask')
 
 
 class HelperTask(MapleTask):
@@ -10,7 +13,7 @@ class HelperTask(MapleTask):
         super(HelperTask, self).__init__()
 
     def task(self):
-        print(f"Helper thread started")
+        _logger.info(f"Helper thread started")
         while not self.wait_stop_event(0.1):
             pyautogui.press('=')
-        print(f"Helper thread stopped")
+        _logger.info(f"Helper thread stopped")

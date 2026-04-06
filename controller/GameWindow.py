@@ -8,7 +8,9 @@ import win32gui
 import win32ui
 
 from util.GameDetector import get_artale_hwnd
+from util.logger import MSLogger
 
+_logger = MSLogger('GameWindow')
 _POLL_INTERVAL = 0.5  # 視窗幾何輪詢間隔（秒）
 
 
@@ -51,7 +53,7 @@ class GameWindow:
                     self._left, self._top = left, top
                     self._width, self._height = right - left, bottom - top
                     if (self._width, self._height) != (prev_w, prev_h):
-                        print(f"[GameWindow] 視窗大小變更：{prev_w}x{prev_h} → {self._width}x{self._height}")
+                        _logger.info(f"[GameWindow] 視窗大小變更：{prev_w}x{prev_h} → {self._width}x{self._height}")
                     return
                 except Exception:
                     pass  # 視窗失效，往下重新偵測
@@ -64,13 +66,13 @@ class GameWindow:
                     self._hwnd = hwnd
                     self._left, self._top = left, top
                     self._width, self._height = right - left, bottom - top
-                    print(f"[GameWindow] 偵測到視窗：hwnd={hex(hwnd)}  {self._width}x{self._height}")
+                    _logger.info(f"[GameWindow] 偵測到視窗：hwnd={hex(hwnd)}  {self._width}x{self._height}")
                 except Exception:
                     self._hwnd = 0
                     self._width = self._height = 0
             else:
                 if self._hwnd:
-                    print("[GameWindow] 遊戲視窗已關閉，等待重新偵測…")
+                    _logger.warning("[GameWindow] 遊戲視窗已關閉，等待重新偵測…")
                 self._hwnd = 0
                 self._width = self._height = 0
 

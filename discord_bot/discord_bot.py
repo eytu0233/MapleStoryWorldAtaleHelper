@@ -35,6 +35,10 @@ from typing import Callable, Optional
 import discord
 from discord.ext import commands
 
+from util.logger import MSLogger
+
+_logger = MSLogger('DiscordBot')
+
 
 class DiscordBot:
     def __init__(self, config_path: str = "config.json"):
@@ -95,7 +99,7 @@ class DiscordBot:
 
         @self._client.event
         async def on_ready():
-            print(f"[DiscordBot] 已登入：{self._client.user} (id={self._client.user.id})")
+            _logger.info(f"[DiscordBot] 已登入：{self._client.user} (id={self._client.user.id})")
             self._ready_event.set()  # 標記：現在可以開始發送通知了
             await self._send("✅ MapleStory 輔助機器人已上線")
 
@@ -110,7 +114,7 @@ class DiscordBot:
 
         @self._client.command(name="ping")
         async def cmd_ping(ctx):
-            print(f"[DiscordBot] ping from channel_id={ctx.channel.id}")
+            _logger.info(f"[DiscordBot] ping from channel_id={ctx.channel.id}")
             if not self._is_allowed(ctx):
                 return
             latency = round(self._client.latency * 1000)
@@ -118,7 +122,7 @@ class DiscordBot:
 
         @self._client.command(name="help")
         async def cmd_help(ctx):
-            print(f"[DiscordBot] help from channel_id={ctx.channel.id}")
+            _logger.info(f"[DiscordBot] help from channel_id={ctx.channel.id}")
             if not self._is_allowed(ctx):
                 return
             lines = [
@@ -133,7 +137,7 @@ class DiscordBot:
 
         @self._client.command(name="status")
         async def cmd_status(ctx):
-            print(f"[DiscordBot] status from channel_id={ctx.channel.id}")
+            _logger.info(f"[DiscordBot] status from channel_id={ctx.channel.id}")
             if not self._is_allowed(ctx):
                 return
             if self._status_cb is None:
@@ -156,7 +160,7 @@ class DiscordBot:
 
         @self._client.command(name="start")
         async def cmd_start(ctx, *, task_name: str):
-            print(f"[DiscordBot] start from channel_id={ctx.channel.id}")
+            _logger.info(f"[DiscordBot] start from channel_id={ctx.channel.id}")
             if not self._is_allowed(ctx):
                 return
             if self._start_cb is None:
@@ -170,7 +174,7 @@ class DiscordBot:
 
         @self._client.command(name="stop")
         async def cmd_stop(ctx, *, task_name: str):
-            print(f"[DiscordBot] stop from channel_id={ctx.channel.id}")
+            _logger.info(f"[DiscordBot] stop from channel_id={ctx.channel.id}")
             if not self._is_allowed(ctx):
                 return
             if self._stop_cb is None:
@@ -194,7 +198,7 @@ class DiscordBot:
     def start(self):
         """在背景執行緒啟動機器人（非阻塞）"""
         if self._thread and self._thread.is_alive():
-            print("[DiscordBot] 機器人已在執行中")
+            _logger.info("[DiscordBot] 機器人已在執行中")
             return
 
         def _run():
@@ -209,27 +213,27 @@ class DiscordBot:
 
         self._thread = threading.Thread(target=_run, name="DiscordBotThread", daemon=True)
         self._thread.start()
-        print("[DiscordBot] 機器人背景執行緒已啟動")
+        _logger.info("[DiscordBot] 機器人背景執行緒已啟動")
 
     def stop(self):
         """關閉機器人"""
         if self._loop and not self._loop.is_closed():
             asyncio.run_coroutine_threadsafe(self._client.close(), self._loop)
-        print("[DiscordBot] 機器人已關閉")
+        _logger.info("[DiscordBot] 機器人已關閉")
 
     # ── 通知 ─────────────────────────────────────────────────────
 
     def notify(self, message: str):
         """傳送通知訊息（增加安全性檢查）"""
         if not self._ready_event.is_set():
-            print(f"[DiscordBot] 警告：機器人尚未就緒，訊息將被丟棄：{message}")
+            _logger.info(f"[DiscordBot] 警告：機器人尚未就緒，訊息將被丟棄：{message}")
             return
 
         if self._loop and self._loop.is_running():
             # 確保使用 threadsafe 呼叫
             asyncio.run_coroutine_threadsafe(self._send(message), self._loop)
         else:
-            print("[DiscordBot] Loop 未執行中")
+            _logger.info("[DiscordBot] Loop 未執行中")
 
     async def _send(self, message: str):
         try:
@@ -238,4 +242,4 @@ class DiscordBot:
             if channel:
                 await channel.send(message)
         except Exception as e:
-            print(f"[DiscordBot] 發送失敗：{e}")
+            _logger.info(f"[DiscordBot] 發送失敗：{e}")

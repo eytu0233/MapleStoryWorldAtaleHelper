@@ -1,6 +1,10 @@
 import tkinter as tk
 import win32gui
 
+from util.logger import MSLogger
+
+_logger = MSLogger('DebugOverlay')
+
 from controller.GameCharacter import (
     _HP_REGION, _MP_REGION, GameCharacter,
     _CHAR_SEARCH_X_MIN, _CHAR_SEARCH_X_MAX,
@@ -33,7 +37,7 @@ class DebugOverlay:
         self.canvas.bind("<Button-1>", lambda e: self.hide())
         self.running = True
         self.update_overlay()
-        print(f"[DebugOverlay] 覆蓋層已顯示（{self.character.name}）")
+        _logger.info(f"[DebugOverlay] 覆蓋層已顯示（{self.character.name}）")
 
     def hide(self):
         self.running = False
@@ -41,7 +45,7 @@ class DebugOverlay:
             self.window.destroy()
             self.window = None
             self.canvas = None
-        print("[DebugOverlay] 覆蓋層已隱藏")
+        _logger.info("[DebugOverlay] 覆蓋層已隱藏")
         if self.on_hide_callback:
             self.on_hide_callback()
 
@@ -162,7 +166,7 @@ class DebugOverlay:
                 self._draw_region(ww, wh, _CURSE_SCAN_REGION, '#cc44ff', '詛咒偵測範圍')
 
         except Exception as e:
-            print(f"[DebugOverlay] 更新失敗: {e}")
+            _logger.error(f"[DebugOverlay] 更新失敗: {e}")
 
         if self.running:
             self.window.after(16, self.update_overlay)   # ~60 fps

@@ -6,6 +6,9 @@ import time
 
 from controller.Command import Command, CommandType
 from controller.GameCharacter import GameCharacter
+from util.logger import MSLogger
+
+_logger = MSLogger('ArchbishopCommand')
 
 # ── 地圖常數 ──────────────────────────────────────────────────────
 _LEFT_BOUNDARY  = 0.05
@@ -51,12 +54,12 @@ class _BuffCommand(Command):
     def trigger_command(self):
         self.interrupt_event.clear()
         name = type(self).__name__
-        print(f'[PRIORITY][{name}] 施放 key={self._key}')
+        _logger.info(f'[PRIORITY][{name}] 施放 key={self._key}')
         pyautogui.keyDown(self._key)
         interrupted = self.interrupt_event.wait(0.6)
         pyautogui.keyUp(self._key)
         if interrupted:
-            print(f'[PRIORITY][{name}] 被打斷')
+            _logger.info(f'[PRIORITY][{name}] 被打斷')
 
 
 class HolySymbol(_BuffCommand):
@@ -95,7 +98,7 @@ class HealCommand(Command):
     @classmethod
     def _try_enqueue(cls, q: queue.Queue):
         if cls._queued is not None:
-            print('[EMERG][HealCommand] 已在 queue 中，略過')
+            _logger.info('[EMERG][HealCommand] 已在 queue 中，略過')
             return
         obj = cls.__new__(cls)
         Command.__init__(obj, CommandType.NORMAL)
@@ -103,13 +106,13 @@ class HealCommand(Command):
         q.put(obj)
 
     def trigger_command(self):
-        print(f'[EMERG][HealCommand] 治療開始 HP={GameCharacter._shared_hp:.1f}%')
+        _logger.info(f'[EMERG][HealCommand] 治療開始 HP={GameCharacter._shared_hp:.1f}%')
         while GameCharacter._shared_hp < 90.0:
             pyautogui.keyDown('z')
             time.sleep(0.3)
             pyautogui.keyUp('z')
-            print(f'[EMERG][HealCommand] 治療中 HP={GameCharacter._shared_hp:.1f}%')
-        print(f'[EMERG][HealCommand] 治療完成 HP={GameCharacter._shared_hp:.1f}%')
+            _logger.info(f'[EMERG][HealCommand] 治療中 HP={GameCharacter._shared_hp:.1f}%')
+        _logger.info(f'[EMERG][HealCommand] 治療完成 HP={GameCharacter._shared_hp:.1f}%')
         HealCommand._queued = None
 
 
@@ -148,7 +151,7 @@ class SearchStepCommand(Command):
         direction = self._direction or ('right' if self._char.map_x <= 0.5 else 'left')
         boundary  = _LEFT_BOUNDARY if direction == 'left' else _RIGHT_BOUNDARY
         dist      = abs(self._char.map_x - boundary)
-        print(f'[NORMAL][SearchStep] dir={direction} pos=({self._char.map_x:.2f},{self._char.map_y:.2f}) dist={dist:.2f} bounce={self._bounce_count}')
+        _logger.info(f'[NORMAL][SearchStep] dir={direction} pos=({self._char.map_x:.2f},{self._char.map_y:.2f}) dist={dist:.2f} bounce={self._bounce_count}')
 
         if dist > 0.1:
             self._queue.put(TeleportStepCommand(self._char, self._queue, direction, self._bounce_count))
@@ -170,7 +173,7 @@ class TeleportStepCommand(Command):
 
     def trigger_command(self):
         self.interrupt_event.clear()
-        print(f'[NORMAL][TeleportStep] →{self._direction}')
+        _logger.info(f'[NORMAL][TeleportStep] →{self._direction}')
         pyautogui.keyDown(self._direction)
         pyautogui.keyDown('c')
         self.interrupt_event.wait(0.3)
@@ -194,7 +197,7 @@ class WalkToBoundaryCommand(Command):
 
     def trigger_command(self):
         self.interrupt_event.clear()
-        print(f'[NORMAL][WalkToBoundary] →{self._direction} pos=({self._char.map_x:.2f},{self._char.map_y:.2f})')
+        _logger.info(f'[NORMAL][WalkToBoundary] →{self._direction} pos=({self._char.map_x:.2f},{self._char.map_y:.2f})')
         condition = (lambda x, y: x <= _LEFT_BOUNDARY) if self._direction == 'left' \
                     else (lambda x, y: x >= _RIGHT_BOUNDARY)
 
@@ -211,13 +214,13 @@ class WalkToBoundaryCommand(Command):
         self._char.minimap_task.unregister_pos_event(eid)
 
         if not reached[0]:
-            print(f'[NORMAL][WalkToBoundary] 被打斷 重試')
+            _logger.info(f'[NORMAL][WalkToBoundary] 被打斷 重試')
             self._queue.put(SearchStepCommand(self._char, self._queue, self._direction, self._bounce_count))
             return
 
         new_dir    = 'right' if self._direction == 'left' else 'left'
         new_bounce = self._bounce_count + 1
-        print(f'[NORMAL][WalkToBoundary] 到達邊界 翻轉→{new_dir} bounce={new_bounce}')
+        _logger.info(f'[NORMAL][WalkToBoundary] 到達邊界 翻轉→{new_dir} bounce={new_bounce}')
 
         if new_bounce >= 2:
             self._queue.put(LayerChangeCommand(self._char, self._queue, new_dir))
@@ -239,12 +242,12 @@ class LayerChangeCommand(Command):
     def trigger_command(self):
         self.interrupt_event.clear()
         layer = _get_layer(self._char)
-        print(f'[NORMAL][LayerChange] layer={layer} dir={self._direction}')
+        _logger.info(f'[NORMAL][LayerChange] layer={layer} dir={self._direction}')
 
         if layer == 'top':
             offset   = random.uniform(0.25, 0.65)
             target_x = _LEFT_BOUNDARY + offset if self._char.map_x < 0.5 else _RIGHT_BOUNDARY - offset
-            print(f'[NORMAL][LayerChange] top → 下降 先移至 x={target_x:.2f}')
+            _logger.info(f'[NORMAL][LayerChange] top → 下降 先移至 x={target_x:.2f}')
             drop_cmd = DropDownCommand(self._char, self._queue, self._direction)
             self._queue.put(MoveToXCommand(self._char, self._queue, target_x, drop_cmd))
         else:
@@ -268,12 +271,12 @@ class MoveToXCommand(Command):
         self.interrupt_event.clear()
         dist = abs(self._char.map_x - self._target_x)
         if dist <= _TELEPORT_TOLERANCE:
-            print(f'[NORMAL][MoveToX] 已到達 x={self._target_x:.2f}')
+            _logger.info(f'[NORMAL][MoveToX] 已到達 x={self._target_x:.2f}')
             self._queue.put(self._next_cmd)
             return
 
         move_dir = 'left' if self._char.map_x > self._target_x else 'right'
-        print(f'[NORMAL][MoveToX] →{move_dir} target={self._target_x:.2f} dist={dist:.2f}')
+        _logger.info(f'[NORMAL][MoveToX] →{move_dir} target={self._target_x:.2f} dist={dist:.2f}')
 
         reached = [False]
 
@@ -291,7 +294,7 @@ class MoveToXCommand(Command):
         self._char.minimap_task.unregister_pos_event(eid)
 
         if not reached[0]:
-            print(f'[NORMAL][MoveToX] 被打斷 重試')
+            _logger.info(f'[NORMAL][MoveToX] 被打斷 重試')
             self._queue.put(self)
             return
 
@@ -311,7 +314,7 @@ class DropDownCommand(Command):
 
     def trigger_command(self):
         self.interrupt_event.clear()
-        print(f'[NORMAL][DropDown] 開始下降')
+        _logger.info(f'[NORMAL][DropDown] 開始下降')
 
         reached_bottom = [False]
 
@@ -331,13 +334,13 @@ class DropDownCommand(Command):
 
         if not reached_bottom[0]:
             if self._char.map_y >= 0.9:
-                print(f'[NORMAL][DropDown] 被打斷 但已在底層 繼續')
+                _logger.info(f'[NORMAL][DropDown] 被打斷 但已在底層 繼續')
             else:
-                print(f'[NORMAL][DropDown] 被打斷 重試')
+                _logger.info(f'[NORMAL][DropDown] 被打斷 重試')
                 self._queue.put(self)
                 return
 
-        print(f'[NORMAL][DropDown] 到達底層 pos=({self._char.map_x:.2f},{self._char.map_y:.2f})')
+        _logger.info(f'[NORMAL][DropDown] 到達底層 pos=({self._char.map_x:.2f},{self._char.map_y:.2f})')
         self._queue.put(SearchStepCommand(self._char, self._queue, self._direction, 0))
 
 
@@ -357,7 +360,7 @@ class GoUpApproachCommand(Command):
     def trigger_command(self):
         self.interrupt_event.clear()
         dist = abs(self._char.map_x - self._teleport_x)
-        print(f'[NORMAL][GoUpApproach] teleport_x={self._teleport_x:.2f} dist={dist:.2f}')
+        _logger.info(f'[NORMAL][GoUpApproach] teleport_x={self._teleport_x:.2f} dist={dist:.2f}')
 
         if dist <= _TELEPORT_TOLERANCE:
             self._queue.put(GoUpPressCommand(self._char, self._queue, self._teleport_x, self._direction, self._layer))
@@ -383,7 +386,7 @@ class GoUpTeleportCommand(Command):
     def trigger_command(self):
         self.interrupt_event.clear()
         move_dir = 'left' if self._char.map_x > self._teleport_x else 'right'
-        print(f'[NORMAL][GoUpTeleport] →{move_dir}')
+        _logger.info(f'[NORMAL][GoUpTeleport] →{move_dir}')
         pyautogui.keyDown(move_dir)
         pyautogui.keyDown('c')
         self.interrupt_event.wait(0.3)
@@ -409,7 +412,7 @@ class GoUpWalkCommand(Command):
     def trigger_command(self):
         self.interrupt_event.clear()
         move_dir = 'left' if self._char.map_x > self._teleport_x else 'right'
-        print(f'[NORMAL][GoUpWalk] →{move_dir} target={self._teleport_x:.2f}')
+        _logger.info(f'[NORMAL][GoUpWalk] →{move_dir} target={self._teleport_x:.2f}')
 
         reached = [False]
 
@@ -427,7 +430,7 @@ class GoUpWalkCommand(Command):
         self._char.minimap_task.unregister_pos_event(eid)
 
         if not reached[0]:
-            print(f'[NORMAL][GoUpWalk] 被打斷 重試')
+            _logger.info(f'[NORMAL][GoUpWalk] 被打斷 重試')
             self._queue.put(GoUpApproachCommand(self._char, self._queue, self._teleport_x, self._direction, self._layer))
             return
 
@@ -450,23 +453,23 @@ class GoUpPressCommand(Command):
     def trigger_command(self):
         self.interrupt_event.clear()
         prev_layer = _get_layer(self._char)
-        print(f'[NORMAL][GoUpPress] 按上 layer={prev_layer} pos=({self._char.map_x:.2f},{self._char.map_y:.2f})')
+        _logger.info(f'[NORMAL][GoUpPress] 按上 layer={prev_layer} pos=({self._char.map_x:.2f},{self._char.map_y:.2f})')
 
         pyautogui.keyDown('up')
         self.interrupt_event.wait(0.3)
         pyautogui.keyUp('up')
 
         if self.interrupt_event.is_set():
-            print(f'[NORMAL][GoUpPress] 被打斷')
+            _logger.info(f'[NORMAL][GoUpPress] 被打斷')
             self._queue.put(SearchStepCommand(self._char, self._queue, self._direction, 0))
             return
 
         new_layer = _get_layer(self._char)
         if new_layer != prev_layer:
-            print(f'[NORMAL][GoUpPress] 換層成功 {prev_layer} → {new_layer}')
+            _logger.info(f'[NORMAL][GoUpPress] 換層成功 {prev_layer} → {new_layer}')
             self._queue.put(SearchStepCommand(self._char, self._queue, self._direction, 0))
         else:
-            print(f'[NORMAL][GoUpPress] 換層失敗 重試')
+            _logger.info(f'[NORMAL][GoUpPress] 換層失敗 重試')
             self._queue.put(GoUpApproachCommand(self._char, self._queue, self._teleport_x, self._direction, self._layer))
 
 
@@ -491,15 +494,15 @@ class AttackCommand(Command):
         if self._cancelled:
             return
         self.interrupt_event.clear()
-        print('[PRIORITY][AttackCommand] 攻擊開始')
+        _logger.info('[PRIORITY][AttackCommand] 攻擊開始')
         pyautogui.keyDown('x')
         self.interrupt_event.wait(0.4)
         pyautogui.keyUp('x')
 
         if self.interrupt_event.is_set():
-            print('[PRIORITY][AttackCommand] 攻擊被中斷')
+            _logger.info('[PRIORITY][AttackCommand] 攻擊被中斷')
         else:
-            print('[PRIORITY][AttackCommand] 攻擊結束')
+            _logger.info('[PRIORITY][AttackCommand] 攻擊結束')
 
         if self._cancelled:
             return
@@ -546,7 +549,7 @@ class SkyAngryCommand(Command):
     @classmethod
     def _try_enqueue(cls, q: queue.Queue, char):
         if cls._queued is not None:
-            print('[PRIORITY][SkyAngry] 已在 queue 中，略過')
+            _logger.info('[PRIORITY][SkyAngry] 已在 queue 中，略過')
             return
         obj = cls(char)
         cls._queued = obj
@@ -565,19 +568,19 @@ class SkyAngryCommand(Command):
                 not (_SKY_ANGRY_X_CENTER - _SKY_ANGRY_X_TOL
                      <= x <=
                      _SKY_ANGRY_X_CENTER + _SKY_ANGRY_X_TOL)):
-            print(f'[PRIORITY][SkyAngry] 條件不足，跳過 '
+            _logger.info(f'[PRIORITY][SkyAngry] 條件不足，跳過 '
                   f'hp={hp:.1f}% mp={mp:.1f}% layer={layer} x={x:.2f}')
             SkyAngryCommand._queued = None
             return
 
-        print(f'[PRIORITY][SkyAngry] 天怒施放 '
+        _logger.info(f'[PRIORITY][SkyAngry] 天怒施放 '
               f'hp={hp:.1f}% mp={mp:.1f}% layer={layer} x={x:.2f}')
         pyautogui.keyDown('d')
         self.interrupt_event.wait(1.0)
         pyautogui.keyUp('d')
 
         if self.interrupt_event.is_set():
-            print('[PRIORITY][SkyAngry] 被打斷')
+            _logger.info('[PRIORITY][SkyAngry] 被打斷')
         else:
-            print('[PRIORITY][SkyAngry] 完成')
+            _logger.info('[PRIORITY][SkyAngry] 完成')
         SkyAngryCommand._queued = None

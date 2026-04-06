@@ -2,6 +2,10 @@ import json
 import os
 from dataclasses import dataclass, field
 
+from util.logger import MSLogger
+
+_logger = MSLogger('MapData')
+
 _MAPS_DIR = "maps"
 
 
@@ -76,8 +80,8 @@ class MapData:
         path = os.path.join(_MAPS_DIR, f"{self.name}.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
-        print(f"[MapData] 已存檔：{path}"
-              f"（{len(self.points)} 點，爬升點 {len(self.climb_indices)} 個）")
+        _logger.info(f"[MapData] 已存檔：{path}"
+                     f"（{len(self.points)} 點，爬升點 {len(self.climb_indices)} 個）")
         return path
 
     @classmethod

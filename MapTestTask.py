@@ -1,6 +1,9 @@
 import random
 
 from controller.GameCharacter import GameCharacter
+from util.logger import MSLogger
+
+_logger = MSLogger('MapTestTask')
 from util.MapData import MapData
 from controller.MinimapTask import _RECORD_DECIMALS
 
@@ -31,7 +34,7 @@ class MapTestTask(GameCharacter):
         """載入 maps/ 目錄中最新的 MapData。"""
         md = MapData.load_latest()
         if md is None:
-            print("[MapTestTask] 無可用地圖，將以無地圖資料執行")
+            _logger.info("[MapTestTask] 無可用地圖，將以無地圖資料執行")
             return
         self.load_map_data(md)
 
@@ -46,7 +49,7 @@ class MapTestTask(GameCharacter):
         self._climb_points_set = md.climb_point_set
         if md.bounds != (0, 0, 0, 0):
             self.minimap_task.set_bounds(*md.bounds)
-        print(f"[MapTestTask] 已載入：{md}")
+        _logger.info(f"[MapTestTask] 已載入：{md}")
 
     # ── GameCharacter 抽象方法 ────────────────────────────────────
 
@@ -69,25 +72,25 @@ class MapTestTask(GameCharacter):
     # ── Task 主迴圈 ──────────────────────────────────────────────
 
     def task(self):
-        print("MapTestTask starting")
+        _logger.info("MapTestTask starting")
 
         while True:
             key = self._pos_key()
 
             if key in self._climb_points_set and random.random() < 0.5:
                 # 爬升點：50% 機率往上移動，完成後重置為往右
-                print(f"[MapTestTask] 爬升點 {key}，往上移動")
+                _logger.info(f"[MapTestTask] 爬升點 {key}，往上移動")
                 if self.move_up():
                     break
                 self._direction = 'right'
 
             elif self._map_points_set and key not in self._map_points_set:
                 # 移動到地圖外（無記錄位置）：反向
-                print(f"[MapTestTask] 位置 {key} 不在地圖內，反向 → {self._direction}")
+                _logger.info(f"[MapTestTask] 位置 {key} 不在地圖內，反向 → {self._direction}")
                 self._reverse()
 
             # 往當前方向移動一步
             if self._hold_key(self._direction, _MOVE_STEP):
                 break
 
-        print("MapTestTask end")
+        _logger.info("MapTestTask end")

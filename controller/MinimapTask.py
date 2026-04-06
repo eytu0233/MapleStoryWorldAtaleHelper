@@ -6,9 +6,12 @@ import cv2
 import numpy as np
 
 from util.MapData import MapData
+from util.logger import MSLogger
 
 from .GameWindow import GameWindow
 from .MapleTask import MapleTask
+
+_logger = MSLogger('MinimapTask')
 
 # ── 小地圖固定邊界預設值（遊戲視窗像素座標）──────────────────────
 _DEFAULT_X0 = 66
@@ -67,7 +70,7 @@ class MinimapTask(MapleTask):
         """設定小地圖邊界（遊戲視窗像素座標）。"""
         self._x0, self._y0 = x0, y0
         self._x1, self._y1 = x1, y1
-        print(f"[MinimapTask] 邊界已更新：({x0}, {y0}) → ({x1}, {y1})")
+        _logger.info(f"[MinimapTask] 邊界已更新：({x0}, {y0}) → ({x1}, {y1})")
 
     def get_bounds(self) -> tuple[int, int, int, int]:
         return self._x0, self._y0, self._x1, self._y1
@@ -174,20 +177,20 @@ class MinimapTask(MapleTask):
         self._map_points.clear()
         self._map_point_set.clear()
         self._recording = True
-        print("[MinimapTask] 地圖錄製開始")
+        _logger.info("[MinimapTask] 地圖錄製開始")
 
     def stop_recording(self):
         """停止錄製並將資料序列化輸出為 JSON。"""
         if not self._recording:
             return
         self._recording = False
-        print("[MinimapTask] 地圖錄製停止")
+        _logger.info("[MinimapTask] 地圖錄製停止")
         self._save_map()
 
     def save_recording_as(self, name: str) -> 'MapData | None':
         """將目前錄製資料以指定名稱儲存為 MapData，不影響錄製狀態。"""
         if not self._map_points:
-            print("[MinimapTask] 無地圖資料，跳過存檔")
+            _logger.warning("[MinimapTask] 無地圖資料，跳過存檔")
             return None
         climb_indices = self._detect_climb_indices(self._map_points)
         md = MapData(
@@ -237,7 +240,7 @@ class MinimapTask(MapleTask):
 
     def _save_map(self):
         if not self._map_points:
-            print("[MinimapTask] 無地圖資料，跳過存檔")
+            _logger.warning("[MinimapTask] 無地圖資料，跳過存檔")
             return
 
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -258,7 +261,7 @@ class MinimapTask(MapleTask):
     # ── Task 主迴圈 ──────────────────────────────────────────────
 
     def task(self):
-        print("MinimapTask starting")
+        _logger.info("MinimapTask starting")
         while True:
             gw = self.game_window
             if gw.is_valid:
@@ -279,4 +282,4 @@ class MinimapTask(MapleTask):
             if self.wait_stop_event(SCAN_INTERVAL):
                 break
 
-        print("MinimapTask end")
+        _logger.info("MinimapTask end")

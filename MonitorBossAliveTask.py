@@ -3,6 +3,9 @@ import time
 
 import util.Utility as Utility
 from controller.MapleTask import MapleTask
+from util.logger import MSLogger
+
+_logger = MSLogger('MonitorBossAliveTask')
 
 
 class MonitorBossAliveTask(MapleTask):
@@ -12,7 +15,7 @@ class MonitorBossAliveTask(MapleTask):
         self.notify_func = notify_func
 
     def task(self):
-        print("monitor_boss_alive_thread starting")
+        _logger.info("monitor_boss_alive_thread starting")
         boss_hp = 0xFFFFFFFF
         boss_hp_percent = 100
         counter = 0
@@ -29,27 +32,27 @@ class MonitorBossAliveTask(MapleTask):
                 if found_once is False:
                     continue
                 if boss_hp_percent <= 10:
-                    print("找不到Boss血條，停止任務")
+                    _logger.info("找不到Boss血條，停止任務")
                     self.notify_func()
                     break
                 counter += 1
-                print(f"可能是誤判，增加counter {counter}")
+                _logger.info(f"可能是誤判，增加counter {counter}")
                 if counter > 4:
-                    print("找不到Boss血條，停止任務")
+                    _logger.info("找不到Boss血條，停止任務")
                     self.notify_func()
                     break
             else:
                 for bbox, text, conf in results:
-                    print(f"找到關鍵字 ：{text} bbox {bbox}")
+                    _logger.info(f"找到關鍵字 ：{text} bbox {bbox}")
                     val = self.extract_percentage(text)
                     boss_hp_percent = val
-                    print(f"boss_hp_percent ：{boss_hp_percent}")
+                    _logger.info(f"boss_hp_percent ：{boss_hp_percent}")
                     val = self.extract_number(text)
                     boss_hp = val if val < boss_hp else boss_hp
-                    print(f"boss_hp ：{boss_hp}")
+                    _logger.info(f"boss_hp ：{boss_hp}")
                     found_once = True
                     counter = 0
-        print("monitor_boss_alive_thread stop")
+        _logger.info("monitor_boss_alive_thread stop")
 
     @staticmethod
     def extract_percentage(text):

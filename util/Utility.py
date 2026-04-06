@@ -6,7 +6,9 @@ import numpy as np
 import pyautogui
 import win32gui
 
-# from logger import logger
+from util.logger import MSLogger
+
+_logger = MSLogger('Utility')
 
 reader = None
 
@@ -47,7 +49,7 @@ def recognize_text(hWnd_or_window, width_scale, height_scale, x_scale, y_scale):
     results = reader.readtext(img_np)
 
     record = time.time() - start_time
-    #print(f"recognize_text辨識花費秒數 {record} 秒")
+    #_logger.info(f"recognize_text辨識花費秒數 {record} 秒")
 
     return results
 
@@ -122,19 +124,19 @@ def detect_minimap_bounds(game_window) -> tuple[int, int, int, int] | None:
         return best_start, best_end
 
     # 步驟 1：掃描全部欄位，收集所有白線
-    print(f"[detect_minimap_bounds] 掃描範圍 w={w} h={h}")
+    _logger.info(f"[detect_minimap_bounds] 掃描範圍 w={w} h={h}")
     white_lines = []  # list of (x, y_start, y_end, length)
     for x in range(w):
         r = get_white_vline_range(x)
         if r is not None:
             seg_len = r[1] - r[0] + 1
             white_lines.append((x, r[0], r[1], seg_len))
-            print(f"  [白線] x={x}  y={r[0]}~{r[1]}  len={seg_len}")
+            _logger.info(f"  [白線] x={x}  y={r[0]}~{r[1]}  len={seg_len}")
 
-    print(f"[detect_minimap_bounds] 共找到 {len(white_lines)} 條白線")
+    _logger.info(f"[detect_minimap_bounds] 共找到 {len(white_lines)} 條白線")
 
     if len(white_lines) < 2:
-        print("[detect_minimap_bounds] 白線數量不足，無法偵測邊界")
+        _logger.info("[detect_minimap_bounds] 白線數量不足，無法偵測邊界")
         return None
 
     # 步驟 2：找 x 差距大於 10、長度相近（±20%），且 x 差最小的兩條
@@ -150,13 +152,13 @@ def detect_minimap_bounds(game_window) -> tuple[int, int, int, int] | None:
             ref = max(la, lb)
             if abs(la - lb) > ref * 0.2:
                 continue
-            print(f"  [候選對] x={xa} len={la}  x={xb} len={lb}  x_diff={x_diff}")
+            _logger.info(f"  [候選對] x={xa} len={la}  x={xb} len={lb}  x_diff={x_diff}")
             if best_diff is None or x_diff < best_diff:
                 best_diff = x_diff
                 best_pair = (white_lines[i], white_lines[j])
 
     if best_pair is None:
-        print("[detect_minimap_bounds] 找不到符合條件的白線對")
+        _logger.info("[detect_minimap_bounds] 找不到符合條件的白線對")
         return None
 
     left_line, right_line = sorted(best_pair, key=lambda t: t[0])
@@ -165,7 +167,7 @@ def detect_minimap_bounds(game_window) -> tuple[int, int, int, int] | None:
     rough_y0 = left_line[1]
     rough_y1 = left_line[2]
 
-    print(f"[detect_minimap_bounds] 垂直搜尋結果：x0={x0} x1={x1} rough_y={rough_y0}~{rough_y1}")
+    _logger.info(f"[detect_minimap_bounds] 垂直搜尋結果：x0={x0} x1={x1} rough_y={rough_y0}~{rough_y1}")
 
     # 步驟 3：在 x0~x1 範圍內，掃描每列橫向白線，精確定出上下邊界
     def get_white_hline_range(y: int, xa: int, xb: int) -> tuple[int, int] | None:
@@ -192,19 +194,19 @@ def detect_minimap_bounds(game_window) -> tuple[int, int, int, int] | None:
             return None
         return xa + best_start, xa + best_end
 
-    print(f"[detect_minimap_bounds] 橫線掃描範圍 y={rough_y0}~{rough_y1} x={x0}~{x1}")
+    _logger.info(f"[detect_minimap_bounds] 橫線掃描範圍 y={rough_y0}~{rough_y1} x={x0}~{x1}")
     h_lines = []  # list of (y, x_start, x_end, length)
     for y in range(rough_y0, rough_y1 + 1):
         r = get_white_hline_range(y, x0, x1)
         if r is not None:
             seg_len = r[1] - r[0] + 1
             h_lines.append((y, r[0], r[1], seg_len))
-            print(f"  [橫白線] y={y}  x={r[0]}~{r[1]}  len={seg_len}")
+            _logger.info(f"  [橫白線] y={y}  x={r[0]}~{r[1]}  len={seg_len}")
 
-    print(f"[detect_minimap_bounds] 共找到 {len(h_lines)} 條橫白線")
+    _logger.info(f"[detect_minimap_bounds] 共找到 {len(h_lines)} 條橫白線")
 
     if len(h_lines) < 2:
-        print("[detect_minimap_bounds] 橫白線不足，改用垂直搜尋的粗略 y 邊界")
+        _logger.info("[detect_minimap_bounds] 橫白線不足，改用垂直搜尋的粗略 y 邊界")
         y0, y1 = rough_y0, rough_y1
     else:
         # 找 y 差距大於 10、長度相近（±20%），且 y 差最小的兩條
@@ -220,23 +222,23 @@ def detect_minimap_bounds(game_window) -> tuple[int, int, int, int] | None:
                 ref = max(la, lb)
                 if abs(la - lb) > ref * 0.2:
                     continue
-                print(f"  [橫候選對] y={ya} len={la}  y={yb} len={lb}  y_diff={y_diff}")
+                _logger.info(f"  [橫候選對] y={ya} len={la}  y={yb} len={lb}  y_diff={y_diff}")
                 if best_hdiff is None or y_diff < best_hdiff:
                     best_hdiff = y_diff
                     best_hpair = (h_lines[i], h_lines[j])
 
         if best_hpair is None:
-            print("[detect_minimap_bounds] 找不到符合條件的橫白線對，改用粗略 y 邊界")
+            _logger.info("[detect_minimap_bounds] 找不到符合條件的橫白線對，改用粗略 y 邊界")
             y0, y1 = rough_y0, rough_y1
         else:
             top_line, bot_line = sorted(best_hpair, key=lambda t: t[0])
             y0 = top_line[0]
             y1 = bot_line[0]
 
-    print(f"[detect_minimap_bounds] 最終結果：x0={x0} y0={y0} x1={x1} y1={y1}")
+    _logger.info(f"[detect_minimap_bounds] 最終結果：x0={x0} y0={y0} x1={x1} y1={y1}")
 
     if x0 >= x1 or y0 >= y1:
-        print("[detect_minimap_bounds] 邊界無效（x0>=x1 或 y0>=y1）")
+        _logger.info("[detect_minimap_bounds] 邊界無效（x0>=x1 或 y0>=y1）")
         return None
 
     return x0, y0, x1, y1

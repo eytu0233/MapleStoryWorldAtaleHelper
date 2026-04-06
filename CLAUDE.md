@@ -152,6 +152,25 @@ def trigger_command(self):
 
 **條件達成** → 將下一個 Command 加入 queue；**被打斷或條件未達成** → 將自身重新加回 queue。
 
+## 日誌規範
+
+**禁止使用 `print()`**，所有日誌輸出一律透過 `MSLogger`：
+
+```python
+from util.logger import MSLogger
+
+_logger = MSLogger('ModuleName')   # log 檔存至 log/ModuleName_<timestamp>.log
+
+_logger.info('一般流程訊息')
+_logger.warning('異常但可繼續的情況')
+_logger.error('錯誤')
+_logger.debug('除錯細節')
+```
+
+- 每個模組（`*.py`）建立自己的 `_logger = MSLogger('<模組名稱>')`，不共用實例
+- log prefix 使用 `[ClassName]` 或 `[CommandName]` 方括號標記，方便過濾
+- 正常流程用 `info`；視窗不可用、重試、條件不足等異常狀況用 `warning`；例外捕捉用 `error`
+
 ## 新增地圖任務 Checklist
 
 1. 建立 `<MapName>Task.py`，繼承 `GameCharacter`，指定 `Job.NIGHTLORD`（或其他職業）

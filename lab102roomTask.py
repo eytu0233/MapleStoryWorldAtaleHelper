@@ -3,6 +3,9 @@ import time
 import pyautogui
 
 from controller.GameCharacter import GameCharacter
+from util.logger import MSLogger
+
+_logger = MSLogger('Lab102RoomTask')
 
 # ── 地圖座標（百分比，0~100）─────────────────────────────────────
 _Y_UPPER_THRESH   = 25    # y < 此值 → 在2樓（可跳躍）
@@ -82,7 +85,7 @@ class Lab102RoomTask(GameCharacter):
 
     def _ascend_right(self) -> bool:
         """停止 → 上樓 → 右跳 → 攻擊 → 走到 x>=98 → 下跳"""
-        print("[Lab102RoomTask] 上樓序列（右）")
+        _logger.info("[Lab102RoomTask] 上樓序列（右）")
         if self.wait_stop_event(0.2):       # 先確保停止
             return True
         if self._climb_to_upper():
@@ -103,7 +106,7 @@ class Lab102RoomTask(GameCharacter):
 
     def _ascend_left(self) -> bool:
         """停止 → 上樓 → 左跳 → 攻擊 → 走到 x<=2 → 下跳"""
-        print("[Lab102RoomTask] 上樓序列（左）")
+        _logger.info("[Lab102RoomTask] 上樓序列（左）")
         if self.wait_stop_event(0.2):       # 先確保停止
             return True
         if self._climb_to_upper():
@@ -125,25 +128,25 @@ class Lab102RoomTask(GameCharacter):
     # ── 主 Task ──────────────────────────────────────────────────
 
     def task(self):
-        print("Lab102RoomTask starting")
+        _logger.info("Lab102RoomTask starting")
 
         # 若不在平地，先下跳
         if self._py < _Y_UPPER_THRESH:
-            print(f"[Lab102RoomTask] 不在平地（y={self._py:.1f}%），先下跳")
+            _logger.info(f"[Lab102RoomTask] 不在平地（y={self._py:.1f}%），先下跳")
             if self.move_down():
-                print("Lab102RoomTask end")
+                _logger.info("Lab102RoomTask end")
                 return
             if self.wait_stop_event(0.5):
-                print("Lab102RoomTask end")
+                _logger.info("Lab102RoomTask end")
                 return
 
         # 起始釋放輔助技能
         if self._cast_aux():
-            print("Lab102RoomTask end")
+            _logger.info("Lab102RoomTask end")
             return
 
         direction = 'left' if self._px > _X_CENTER else 'right'
-        print(f"[Lab102RoomTask] 起始方向: {direction}，x={self._px:.1f}%")
+        _logger.info(f"[Lab102RoomTask] 起始方向: {direction}，x={self._px:.1f}%")
 
         last_attack = time.time()
         last_aux    = time.time()
@@ -192,4 +195,4 @@ class Lab102RoomTask(GameCharacter):
                     if self._hold_key(direction, poll):
                         breakㄏㄏ
 
-        print("Lab102RoomTask end")
+        _logger.info("Lab102RoomTask end")

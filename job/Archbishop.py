@@ -4,6 +4,9 @@ from typing import Optional
 from controller.CommandGameCharacter import CommandGameCharacter
 from controller.GameCharacter import GameCharacter
 from discord_bot.discord_bot import DiscordBot
+from util.logger import MSLogger
+
+_logger = MSLogger('Archbishop')
 from job.ArchbishopCommand import (HolySymbol, AngelBlessing, HolyLight, MapleBlessing,
                                    HealCommand, DragonCommand, SearchStepCommand,
                                    AttackCommand, SkyAngryCommand, sky_angry_position_ok)
@@ -86,7 +89,7 @@ class Archbishop(CommandGameCharacter):
         if self._hp_notify_timer is not None:
             self._hp_notify_timer.cancel()
             self._hp_notify_timer = None
-        print("Clear queue")
+        _logger.info("Clear queue")
 
     # ── 抽象方法實作 ─────────────────────────────────────────────
 
@@ -112,7 +115,7 @@ class Archbishop(CommandGameCharacter):
 
         # ── 建立全新 Command 實例並初始化 ───────────────────────────
         if self._discord_bot is not None:
-            print("Register dead monitor")
+            _logger.info("Register dead monitor")
             cb = self._on_hp_dead
             self._hp_dead_callback = cb
             GameCharacter.register_hp_callback(1.0, cb, condition='below')

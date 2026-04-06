@@ -7,6 +7,9 @@ from enum import Enum, auto
 import pyautogui
 
 from controller.GameCharacter import GameCharacter
+from util.logger import MSLogger
+
+_logger = MSLogger('GhostWomen')
 
 SKILL1_INTERVAL = 270
 SKILL2_INTERVAL = 270
@@ -65,7 +68,7 @@ class GhostWomen(GameCharacter):
 
         def timer_loop(interval, state, aux_skill):
             while not self._timer_stop.wait(interval):
-                print(f"[GhostWomen] Timer fired: {state} aux_skill={aux_skill}")
+                _logger.info(f"[GhostWomen] Timer fired: {state} aux_skill={aux_skill}")
                 self._event_queue.append((state, aux_skill))
 
         def random_timer_loop():
@@ -73,7 +76,7 @@ class GhostWomen(GameCharacter):
                 interval = random.uniform(SKILLX_INTERVAL_MIN, SKILLX_INTERVAL_MAX)
                 if self._timer_stop.wait(interval):
                     break
-                print(f"[GhostWomen] Timer fired: {State.AUX} aux_skill=x")
+                _logger.info(f"[GhostWomen] Timer fired: {State.AUX} aux_skill=x")
                 self._event_queue.append((State.AUX, 'x'))
 
         for interval, state, aux_skill in [
@@ -93,7 +96,7 @@ class GhostWomen(GameCharacter):
 
         def fire():
             if not timer_stop.wait(STEP_INTERVAL) and self._step_gen == gen:
-                print("[GhostWomen] Step timer fired")
+                _logger.info("[GhostWomen] Step timer fired")
                 self._event_queue.append((State.STEP, None))
 
         threading.Thread(target=fire, daemon=True).start()
@@ -105,10 +108,10 @@ class GhostWomen(GameCharacter):
     # --- InitState ---
 
     def _init_pre(self):
-        print("[GhostWomen] InitState: pre")
+        _logger.info("[GhostWomen] InitState: pre")
 
     def _init_process(self) -> bool:
-        print("[GhostWomen] InitState: process")
+        _logger.info("[GhostWomen] InitState: process")
         if self._hold_key('1', AUX_INTERVAL):
             return True
         if self._hold_key('2', AUX_INTERVAL):
@@ -122,13 +125,13 @@ class GhostWomen(GameCharacter):
         return False
 
     def _init_post(self) -> bool:
-        print("[GhostWomen] InitState: post")
+        _logger.info("[GhostWomen] InitState: post")
         return self.wait_stop_event(1)
 
     # --- AttackState ---
 
     def _attack_pre(self) -> bool:
-        print("[GhostWomen] AttackState: pre")
+        _logger.info("[GhostWomen] AttackState: pre")
         self._schedule_step()   # 攻擊開始，重新計時 10 秒
         if self.wait_stop_event(0.5):
             return True
@@ -136,7 +139,7 @@ class GhostWomen(GameCharacter):
         return False
 
     def _attack_post(self):
-        print("[GhostWomen] AttackState: post")
+        _logger.info("[GhostWomen] AttackState: post")
         pyautogui.keyUp('z')
 
     # --- StepState ---
@@ -169,7 +172,7 @@ class GhostWomen(GameCharacter):
         mt = self.minimap_task
         eid = mt.register_pos_event(stop_condition, stop_event.set, once=True)
 
-        print(f"[GhostWomen] StepState: dir={self._step_dir} x={x:.3f}")
+        _logger.info(f"[GhostWomen] StepState: dir={self._step_dir} x={x:.3f}")
         try:
             while not stop_event.is_set():
                 # 移動 1 秒
@@ -193,11 +196,11 @@ class GhostWomen(GameCharacter):
             mt.unregister_pos_event(eid)
 
         end_x = self.map_x
-        print(f"[GhostWomen] StepState: done x={end_x:.3f}")
+        _logger.info(f"[GhostWomen] StepState: done x={end_x:.3f}")
         if end_x >= _STEP_X_LEFT or end_x <= _STEP_X_RIGHT:
             self._first_stop_after_boundary = True
             reverse_dir = 'right' if self._step_dir == 'left' else 'left'
-            print(f"[GhostWomen] StepState: at boundary, reversing {reverse_dir} 0.2s")
+            _logger.info(f"[GhostWomen] StepState: at boundary, reversing {reverse_dir} 0.2s")
             if self._hold_key(reverse_dir, 0.2):
                 return True
         return False
@@ -205,7 +208,7 @@ class GhostWomen(GameCharacter):
     # --- AuxState ---
 
     def _aux_process(self, skill) -> bool:
-        print(f"[GhostWomen] AuxState: process (skill={skill})")
+        _logger.info(f"[GhostWomen] AuxState: process (skill={skill})")
         if self.wait_stop_event(0.5):
             return True
         if skill == 1:
@@ -229,18 +232,18 @@ class GhostWomen(GameCharacter):
     # --- State machine runner ---
 
     def task(self):
-        print("GhostWomen starting")
+        _logger.info("GhostWomen starting")
         self._event_queue.clear()
         self._start_aux_timers()
 
         self._init_pre()
         if self._init_process():
             self._cancel_timers()
-            print("GhostWomen end")
+            _logger.info("GhostWomen end")
             return
         if self._init_post():
             self._cancel_timers()
-            print("GhostWomen end")
+            _logger.info("GhostWomen end")
             return
 
         state = State.ATTACK
@@ -258,7 +261,7 @@ class GhostWomen(GameCharacter):
                         break
                     if self._event_queue:
                         state, aux_skill = self._pop_event()
-                        print(f"[GhostWomen] AttackState: → {state} aux_skill={aux_skill}")
+                        _logger.info(f"[GhostWomen] AttackState: → {state} aux_skill={aux_skill}")
                         break
 
                 self._attack_post()
@@ -276,4 +279,4 @@ class GhostWomen(GameCharacter):
                 state, aux_skill = self._pop_event() if self._event_queue else (State.ATTACK, None)
 
         self._cancel_timers()
-        print("GhostWomen end")
+        _logger.info("GhostWomen end")
