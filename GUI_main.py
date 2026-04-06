@@ -20,12 +20,14 @@ from NightLordTask import NightLordTask
 from GhostWomen import GhostWomen
 from lab102roomTask import Lab102RoomTask
 from job.Archbishop import Archbishop
+from job.Support_bot import SupportBot
 from discord_bot.discord_bot import DiscordBot
 
 CONFIG_FILE = "config.json"
 
 HOTKEY_MAP = [
     ("F2",  "弓手 (BowmasterTask)"),
+    ("F4",  "補師機器人 (SupportBot)"),
     ("F5",  "地圖錄製 (toggle)"),
     ("F6",  "地圖測試 (MapTestTask)"),
     ("F7",  "主教 (Archbishop)"),
@@ -408,6 +410,9 @@ def on_press(key):
     if key.name == 'f2':
         print("F2 - BowmasterTask")
         bowmaster_task.toggle()
+    if key.name == 'f4':
+        print("F4 - SupportBot")
+        support_bot_task.toggle()
     if key.name == 'f5':
         mt = GameCharacter.shared_minimap()
         if mt is not None:
@@ -439,6 +444,7 @@ def on_press(key):
 
 # ── 初始化 Tasks ─────────────────────────────────────────────
 bowmaster_task   = BowmasterTask()
+support_bot_task = SupportBot()
 archbishop_task  = Archbishop()
 night_lord_task  = NightLordTask()
 ghost_women_task = GhostWomen()

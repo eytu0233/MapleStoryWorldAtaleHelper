@@ -1,0 +1,16 @@
+{
+  "minimap_bounds": {
+    "x": 18,
+    "y": 193,
+    "w": 348,
+    "h": 233
+  },
+  "free_market_button_pos": {
+    "x": 0.76,
+    "y": 0.965
+  },
+  "free_market_exit": {
+    "minimap_x": 0.15,
+    "minimap_y": 0.84
+  }
+}

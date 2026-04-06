@@ -1,0 +1,10 @@
+{
+  "support": {
+    "interval": 270,
+    "buff_skills": [
+      "1",
+      "2",
+      "5"
+    ]
+  }
+}

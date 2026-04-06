@@ -88,6 +88,52 @@ uv run python main.py
 
 ---
 
+## 設定檔說明
+
+### support.json
+
+補師機器人（SupportBot / F4）的行為設定。
+
+```json
+{
+  "support": {
+    "interval": 270,
+    "buff_skills": ["1", "2", "5"]
+  }
+}
+```
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `interval` | int | 在自由市場等待的秒數，時間到後離開並重新施放 buff |
+| `buff_skills` | string[] | 依序施放的技能按鍵列表，每個技能按下持續 0.6 秒 |
+
+---
+
+### free_market.json
+
+自由市場地圖的小地圖邊界與操作位置設定。
+
+```json
+{
+  "minimap_bounds": { "x": 18, "y": 193, "w": 348, "h": 233 },
+  "free_market_button_pos": { "x": 0.76, "y": 0.965 },
+  "free_market_exit": { "minimap_x": 0.15, "minimap_y": 0.84 }
+}
+```
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `minimap_bounds` | object | 自由市場地圖的小地圖邊界（遊戲視窗像素座標）。進入自由市場後套用，離開後還原 |
+| `minimap_bounds.x` / `.y` | int | 小地圖左上角像素座標 |
+| `minimap_bounds.w` / `.h` | int | 小地圖寬高（像素） |
+| `free_market_button_pos` | object | 遊戲畫面上「自由市場」按鈕的視窗相對座標（0.0～1.0） |
+| `free_market_exit` | object | 進入自由市場後，角色要移動到的出口等待位置（小地圖比例座標） |
+| `free_market_exit.minimap_x` | float | 出口等待點的小地圖 x 比例（0.0＝左，1.0＝右） |
+| `free_market_exit.minimap_y` | float | 同時作為「確認已進入自由市場」的 y 基準值，實際 y 與此值差距在 ±0.05 內視為成功 |
+
+---
+
 ## 常用指令
 
 ```bash
