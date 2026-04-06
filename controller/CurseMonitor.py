@@ -5,7 +5,7 @@ CurseMonitor — 偵測遊戲詛咒狀態通知框，並透過 notify_fn 發送�
   HSV 深紫背景 + 亮紫文字 + 面積條件
 
 須連續 confirm_frames 幀皆偵測到才觸發通知，避免誤報。
-confirm_frames 可透過 config.json 的 curse_monitor.confirm_frames 設定，預設為 5。
+confirm_frames 可透過 config/config.json 的 curse_monitor.confirm_frames 設定，預設為 5。
 
 觸發後啟動 _NOTIFY_COOLDOWN 秒冷卻，期間不重複通知。
 
@@ -50,7 +50,7 @@ _DEFAULT_CONFIRM_FRAMES = 5  # 預設連續確認幀數
 
 def _load_confirm_frames() -> int:
     try:
-        with open('config.json', 'r', encoding='utf-8') as f:
+        with open('config/config.json', 'r', encoding='utf-8') as f:
             cfg = json.load(f)
         return int(cfg.get('curse_monitor', {}).get('confirm_frames', _DEFAULT_CONFIRM_FRAMES))
     except Exception:

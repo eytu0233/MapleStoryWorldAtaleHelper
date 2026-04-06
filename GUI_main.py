@@ -26,7 +26,7 @@ from util.logger import MSLogger
 
 _logger = MSLogger('GUI')
 
-CONFIG_FILE = "config.json"
+CONFIG_FILE = "config/config.json"
 
 HOTKEY_MAP = [
     ("F2",  "弓手 (BowmasterTask)"),

@@ -10,8 +10,8 @@ from controller.CommandGameCharacter import CommandGameCharacter
 from controller.GameCharacter import GameCharacter
 from util.logger import MSLogger
 
-_CONFIG_FILE      = 'support.json'
-_FREE_MARKET_FILE = 'free_market.json'
+_CONFIG_FILE      = 'config/support.json'
+_FREE_MARKET_FILE = 'config/free_market.json'
 
 _MINIMAP_Y_TOLERANCE   = 0.05   # 確認進入自由市場的 y 容差
 _FREE_MARKET_WAIT_SECS = 2.0    # 按下按鈕後等待確認的秒數

@@ -1,6 +1,6 @@
 """
 Discord 機器人 — 通知與指令接收
-token / channel_id 從專案根目錄的 config.json 讀取：
+token / channel_id 從 config/config.json 讀取：
   {
     "discord_bot": {
       "token": "YOUR_BOT_TOKEN",
@@ -17,7 +17,7 @@ token / channel_id 從專案根目錄的 config.json 讀取：
   !help               顯示可用指令
 
 外部呼叫：
-  bot = DiscordBot("config.json")
+  bot = DiscordBot("config/config.json")
   bot.register_status_callback(fn)          # fn() -> dict[str, bool]
   bot.register_start_callback(fn)           # fn(task_name: str) -> str
   bot.register_stop_callback(fn)            # fn(task_name: str) -> str
@@ -41,7 +41,7 @@ _logger = MSLogger('DiscordBot')
 
 
 class DiscordBot:
-    def __init__(self, config_path: str = "config.json"):
+    def __init__(self, config_path: str = "config/config.json"):
         self._config_path = config_path
         self._token: str = ""
         self._channel_id: int = 0
@@ -73,7 +73,7 @@ class DiscordBot:
         self._channel_id = int(discord_cfg.get("channel_id", 0))
         self._allowed_user_ids = [int(uid) for uid in discord_cfg.get("allowed_user_ids", [])]
         if not self._token:
-            raise ValueError("config.json 中 discord_bot.token 未設定")
+            raise ValueError("config/config.json 中 discord_bot.token 未設定")
 
     # ── 回呼註冊 ─────────────────────────────────────────────────
 
