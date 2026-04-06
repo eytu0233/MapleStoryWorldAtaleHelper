@@ -24,3 +24,9 @@ class Command(abc.ABC):
     def trigger_command(self):
         ...
 
+    @abc.abstractmethod
+    def release(self):
+        """釋放此 Command 持有的所有外部資源（callback、timer、class 追蹤變數等）。
+        Archbishop 停止時統一呼叫。無外部資源者實作為 pass。"""
+        ...
+

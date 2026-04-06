@@ -46,6 +46,8 @@ class _BuffCommand(Command):
         super().__init__(CommandType.CONDITION)
         self._key = key
 
+    def release(self): pass
+
     def trigger_command(self):
         self.interrupt_event.clear()
         name = type(self).__name__
@@ -74,15 +76,31 @@ class DragonCommand(_BuffCommand):
 
 
 class HealCommand(Command):
+    _queued: 'HealCommand | None' = None  # 追蹤 queue 中的實例，防止重複入隊
+    _hp_callback = None                    # 記錄已註冊的 callback 以便解除
+
     def __init__(self, q: queue.Queue):
         super().__init__(CommandType.NORMAL)
-        GameCharacter.register_hp_callback(80.0, lambda: q.put(HealCommand._bare()))
+        cb = lambda: HealCommand._try_enqueue(q)
+        HealCommand._hp_callback = cb
+        GameCharacter.register_hp_callback(80.0, cb)
 
     @classmethod
-    def _bare(cls):
+    def release(cls):
+        if cls._hp_callback is not None:
+            GameCharacter.unregister_hp_callback(cls._hp_callback)
+            cls._hp_callback = None
+        cls._queued = None
+
+    @classmethod
+    def _try_enqueue(cls, q: queue.Queue):
+        if cls._queued is not None:
+            print('[EMERG][HealCommand] 已在 queue 中，略過')
+            return
         obj = cls.__new__(cls)
         Command.__init__(obj, CommandType.NORMAL)
-        return obj
+        cls._queued = obj
+        q.put(obj)
 
     def trigger_command(self):
         print(f'[EMERG][HealCommand] 治療開始 HP={GameCharacter._shared_hp:.1f}%')
@@ -90,9 +108,9 @@ class HealCommand(Command):
             pyautogui.keyDown('z')
             time.sleep(0.3)
             pyautogui.keyUp('z')
-            time.sleep(1.0)
             print(f'[EMERG][HealCommand] 治療中 HP={GameCharacter._shared_hp:.1f}%')
         print(f'[EMERG][HealCommand] 治療完成 HP={GameCharacter._shared_hp:.1f}%')
+        HealCommand._queued = None
 
 
 # ── Search Commands ───────────────────────────────────────────────
@@ -123,6 +141,8 @@ class SearchStepCommand(Command):
         self._direction    = direction
         self._bounce_count = bounce_count
 
+    def release(self): pass
+
     def trigger_command(self):
         self.interrupt_event.clear()
         direction = self._direction or ('right' if self._char.map_x <= 0.5 else 'left')
@@ -146,6 +166,8 @@ class TeleportStepCommand(Command):
         self._direction    = direction
         self._bounce_count = bounce_count
 
+    def release(self): pass
+
     def trigger_command(self):
         self.interrupt_event.clear()
         print(f'[NORMAL][TeleportStep] →{self._direction}')
@@ -167,6 +189,8 @@ class WalkToBoundaryCommand(Command):
         self._queue        = q
         self._direction    = direction
         self._bounce_count = bounce_count
+
+    def release(self): pass
 
     def trigger_command(self):
         self.interrupt_event.clear()
@@ -210,6 +234,8 @@ class LayerChangeCommand(Command):
         self._queue     = q
         self._direction = direction
 
+    def release(self): pass
+
     def trigger_command(self):
         self.interrupt_event.clear()
         layer = _get_layer(self._char)
@@ -235,6 +261,8 @@ class MoveToXCommand(Command):
         self._queue    = q
         self._target_x = target_x
         self._next_cmd = next_cmd
+
+    def release(self): pass
 
     def trigger_command(self):
         self.interrupt_event.clear()
@@ -279,6 +307,8 @@ class DropDownCommand(Command):
         self._queue     = q
         self._direction = direction
 
+    def release(self): pass
+
     def trigger_command(self):
         self.interrupt_event.clear()
         print(f'[NORMAL][DropDown] 開始下降')
@@ -300,9 +330,12 @@ class DropDownCommand(Command):
         self._char.minimap_task.unregister_pos_event(eid)
 
         if not reached_bottom[0]:
-            print(f'[NORMAL][DropDown] 被打斷 重試')
-            self._queue.put(self)
-            return
+            if self._char.map_y >= 0.9:
+                print(f'[NORMAL][DropDown] 被打斷 但已在底層 繼續')
+            else:
+                print(f'[NORMAL][DropDown] 被打斷 重試')
+                self._queue.put(self)
+                return
 
         print(f'[NORMAL][DropDown] 到達底層 pos=({self._char.map_x:.2f},{self._char.map_y:.2f})')
         self._queue.put(SearchStepCommand(self._char, self._queue, self._direction, 0))
@@ -318,6 +351,8 @@ class GoUpApproachCommand(Command):
         self._teleport_x = teleport_x
         self._direction  = direction
         self._layer      = layer
+
+    def release(self): pass
 
     def trigger_command(self):
         self.interrupt_event.clear()
@@ -343,6 +378,8 @@ class GoUpTeleportCommand(Command):
         self._direction  = direction
         self._layer      = layer
 
+    def release(self): pass
+
     def trigger_command(self):
         self.interrupt_event.clear()
         move_dir = 'left' if self._char.map_x > self._teleport_x else 'right'
@@ -366,6 +403,8 @@ class GoUpWalkCommand(Command):
         self._teleport_x = teleport_x
         self._direction  = direction
         self._layer      = layer
+
+    def release(self): pass
 
     def trigger_command(self):
         self.interrupt_event.clear()
@@ -406,6 +445,8 @@ class GoUpPressCommand(Command):
         self._direction  = direction
         self._layer      = layer
 
+    def release(self): pass
+
     def trigger_command(self):
         self.interrupt_event.clear()
         prev_layer = _get_layer(self._char)
@@ -435,10 +476,20 @@ class AttackCommand(Command):
 
     def __init__(self, priority_queue: queue.Queue):
         super().__init__(CommandType.CONDITION)
-        self._queue   = priority_queue
-        self._counter = 0
+        self._queue      = priority_queue
+        self._counter    = 0
+        self._cancelled  = False
+        self._pending_timer: threading.Timer | None = None
+
+    def release(self):
+        self._cancelled = True
+        if self._pending_timer is not None:
+            self._pending_timer.cancel()
+            self._pending_timer = None
 
     def trigger_command(self):
+        if self._cancelled:
+            return
         self.interrupt_event.clear()
         print('[PRIORITY][AttackCommand] 攻擊開始')
         pyautogui.keyDown('x')
@@ -450,9 +501,12 @@ class AttackCommand(Command):
         else:
             print('[PRIORITY][AttackCommand] 攻擊結束')
 
+        if self._cancelled:
+            return
         delay = random.randint(1500, 3000) / 1000
         t = threading.Timer(delay, self._queue.put, args=(self,))
         t.daemon = True
+        self._pending_timer = t
         t.start()
 
 
@@ -479,10 +533,24 @@ class SkyAngryCommand(Command):
       - 小地圖 x 在 0.35 ~ 0.45
     施放方式：按住 d 1 秒（priority，可被更高優先中斷）。
     """
+    _queued: 'SkyAngryCommand | None' = None  # 追蹤 queue 中的實例，防止重複入隊
 
     def __init__(self, char):
         super().__init__(CommandType.CONDITION)
         self._char = char
+
+    @classmethod
+    def release(cls):
+        cls._queued = None
+
+    @classmethod
+    def _try_enqueue(cls, q: queue.Queue, char):
+        if cls._queued is not None:
+            print('[PRIORITY][SkyAngry] 已在 queue 中，略過')
+            return
+        obj = cls(char)
+        cls._queued = obj
+        q.put(obj)
 
     def trigger_command(self):
         self.interrupt_event.clear()
@@ -499,6 +567,7 @@ class SkyAngryCommand(Command):
                      _SKY_ANGRY_X_CENTER + _SKY_ANGRY_X_TOL)):
             print(f'[PRIORITY][SkyAngry] 條件不足，跳過 '
                   f'hp={hp:.1f}% mp={mp:.1f}% layer={layer} x={x:.2f}')
+            SkyAngryCommand._queued = None
             return
 
         print(f'[PRIORITY][SkyAngry] 天怒施放 '
@@ -511,3 +580,4 @@ class SkyAngryCommand(Command):
             print('[PRIORITY][SkyAngry] 被打斷')
         else:
             print('[PRIORITY][SkyAngry] 完成')
+        SkyAngryCommand._queued = None

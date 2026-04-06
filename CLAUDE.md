@@ -86,6 +86,41 @@ self.minimap_task.unregister_pos_event(eid)
 
 每個 `Command` 只能做**一件事**，`trigger_command` 內只能有**一個** `self.interrupt_event.wait`。
 
+#### 防重複入隊規則
+
+**同一個 Command（或同一邏輯功能的 Command）在還在 queue 中或 `trigger_command` 尚未返回時，不可再次被加入任何 queue。**
+
+實作模式：
+- 使用**實例追蹤**（`_queued: 'FooCommand | None' = None`），搭配 `_try_enqueue` 類別方法在入隊前檢查
+- 使用 `is not None` 判斷（而非 bool 旗標），避免繼承時 class variable 共用造成汙染
+- `trigger_command` 在所有 return 路徑（正常完成、條件不足、被打斷）結束前**必須**重置為 `None`
+- `stop()` 清空 queue 後也要重置所有追蹤變數，避免下次啟動時殘留
+
+```python
+class FooCommand(Command):
+    _queued: 'FooCommand | None' = None
+
+    @classmethod
+    def _try_enqueue(cls, q: queue.Queue, *args):
+        if cls._queued is not None:
+            return
+        obj = cls(*args)
+        cls._queued = obj
+        q.put(obj)
+
+    def trigger_command(self):
+        self.interrupt_event.clear()
+        try:
+            ...
+            self.interrupt_event.wait(1.0)
+            ...
+        finally:
+            FooCommand._queued = None
+```
+
+- 透過 Timer 或 callback 重新入隊自身時，必須確認 `trigger_command` 已返回後才觸發
+- `self._queue.put(self)` 的重試模式（`trigger_command` 返回後推自身）天然安全，**不需要**此機制
+
 **禁止** `done.wait()`、daemon thread 模式、`while` loop、`time.sleep`。
 
 **等待位置條件**的標準寫法：將 position callback 設為呼叫 `self.interrupt_command()`，再用 `interrupt_event.wait` 阻塞。結束後透過本地 flag 判斷是「條件達成」還是「外部打斷」：

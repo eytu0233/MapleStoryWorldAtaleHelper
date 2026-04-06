@@ -6,6 +6,7 @@ from controller.GameCharacter import (
     _CHAR_SEARCH_X_MIN, _CHAR_SEARCH_X_MAX,
     _CHAR_SEARCH_Y_MIN, _CHAR_SEARCH_Y_MAX,
 )
+from controller.CurseMonitor import _SCAN_REGION as _CURSE_SCAN_REGION
 from controller.MinimapTask import MinimapTask
 
 
@@ -156,6 +157,9 @@ class DebugOverlay:
                 # ── HP / MP 辨識範圍 ─────────────────────────────
                 self._draw_region(ww, wh, _HP_REGION, '#ff4444', 'HP', self.character.hp)
                 self._draw_region(ww, wh, _MP_REGION, '#4488ff', 'MP', self.character.mp)
+
+                # ── 詛咒偵測掃描範圍 ─────────────────────────────
+                self._draw_region(ww, wh, _CURSE_SCAN_REGION, '#cc44ff', '詛咒偵測範圍')
 
         except Exception as e:
             print(f"[DebugOverlay] 更新失敗: {e}")

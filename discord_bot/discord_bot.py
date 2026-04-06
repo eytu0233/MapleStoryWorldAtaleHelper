@@ -52,6 +52,8 @@ class DiscordBot:
         self._start_cb: Optional[Callable[[str], str]] = None
         self._stop_cb: Optional[Callable[[str], str]] = None
 
+        self._ready_event = threading.Event()  # 新增：用來同步執行緒狀態
+
         self._load_config()
         self._build_client()
 
@@ -94,9 +96,8 @@ class DiscordBot:
         @self._client.event
         async def on_ready():
             print(f"[DiscordBot] 已登入：{self._client.user} (id={self._client.user.id})")
-            channel = self._client.get_channel(self._channel_id)
-            if channel:
-                await channel.send("✅ MapleStory 輔助機器人已上線")
+            self._ready_event.set()  # 標記：現在可以開始發送通知了
+            await self._send("✅ MapleStory 輔助機器人已上線")
 
         @self._client.event
         async def on_command_error(ctx, error):
@@ -109,6 +110,7 @@ class DiscordBot:
 
         @self._client.command(name="ping")
         async def cmd_ping(ctx):
+            print(f"[DiscordBot] ping from channel_id={ctx.channel.id}")
             if not self._is_allowed(ctx):
                 return
             latency = round(self._client.latency * 1000)
@@ -116,6 +118,7 @@ class DiscordBot:
 
         @self._client.command(name="help")
         async def cmd_help(ctx):
+            print(f"[DiscordBot] help from channel_id={ctx.channel.id}")
             if not self._is_allowed(ctx):
                 return
             lines = [
@@ -130,6 +133,7 @@ class DiscordBot:
 
         @self._client.command(name="status")
         async def cmd_status(ctx):
+            print(f"[DiscordBot] status from channel_id={ctx.channel.id}")
             if not self._is_allowed(ctx):
                 return
             if self._status_cb is None:
@@ -152,6 +156,7 @@ class DiscordBot:
 
         @self._client.command(name="start")
         async def cmd_start(ctx, *, task_name: str):
+            print(f"[DiscordBot] start from channel_id={ctx.channel.id}")
             if not self._is_allowed(ctx):
                 return
             if self._start_cb is None:
@@ -165,6 +170,7 @@ class DiscordBot:
 
         @self._client.command(name="stop")
         async def cmd_stop(ctx, *, task_name: str):
+            print(f"[DiscordBot] stop from channel_id={ctx.channel.id}")
             if not self._is_allowed(ctx):
                 return
             if self._stop_cb is None:
@@ -214,15 +220,22 @@ class DiscordBot:
     # ── 通知 ─────────────────────────────────────────────────────
 
     def notify(self, message: str):
-        """傳送通知訊息到設定的頻道（執行緒安全）"""
-        if self._loop is None or self._loop.is_closed():
-            print(f"[DiscordBot] notify 失敗（loop 未啟動）：{message}")
+        """傳送通知訊息（增加安全性檢查）"""
+        if not self._ready_event.is_set():
+            print(f"[DiscordBot] 警告：機器人尚未就緒，訊息將被丟棄：{message}")
             return
-        asyncio.run_coroutine_threadsafe(self._send(message), self._loop)
+
+        if self._loop and self._loop.is_running():
+            # 確保使用 threadsafe 呼叫
+            asyncio.run_coroutine_threadsafe(self._send(message), self._loop)
+        else:
+            print("[DiscordBot] Loop 未執行中")
 
     async def _send(self, message: str):
-        channel = self._client.get_channel(self._channel_id)
-        if channel is None:
-            print(f"[DiscordBot] 找不到頻道 id={self._channel_id}")
-            return
-        await channel.send(message)
+        try:
+            # 優先使用 fetch 確保一定能抓到頻道（雖然慢一點點但更穩）
+            channel = await self._client.fetch_channel(self._channel_id)
+            if channel:
+                await channel.send(message)
+        except Exception as e:
+            print(f"[DiscordBot] 發送失敗：{e}")

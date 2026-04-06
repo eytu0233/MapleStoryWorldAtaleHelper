@@ -455,6 +455,8 @@ try:
 except (ValueError, FileNotFoundError) as e:
     print(f"[Discord] 機器人初始化失敗：{e}")
 
+archbishop_task._discord_bot = discord_bot
+
 # 啟動時套用已儲存的小地圖邊界
 _mm = config.get("minimap_bounds", {})
 if _mm:
@@ -494,6 +496,11 @@ if discord_bot is not None:
     discord_bot.register_start_callback(_discord_start)
     discord_bot.register_stop_callback(_discord_stop)
     discord_bot.start()
+
+    cm = GameCharacter.shared_curse_monitor()
+    if cm is not None:
+        cm._notify_fn = discord_bot.notify
+        cm.start()
 
 
 def on_close():

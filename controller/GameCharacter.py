@@ -29,7 +29,7 @@ def _get_ocr_reader() -> easyocr.Reader:
 
 # ── HP / MP 狀態列在視窗中的比例座標 ────────────────────────────
 _HP_REGION = (0.25, 0.922, 0.105, 0.042)   # (x, y, w, h) 比例
-_MP_REGION = (0.41, 0.922, 0.105, 0.042)
+_MP_REGION = (0.38, 0.922, 0.105, 0.042)
 
 # ── 角色名字邊框顏色偵測設定 ─────────────────────────────────────
 _CHAR_COLOR_RGB       = (199, 168, 214)     # 名字邊框 RGB
@@ -65,6 +65,7 @@ class GameCharacter(MapleTask, abc.ABC):
     _shared_stat_stop: ClassVar[threading.Event] = threading.Event()
     _shared_init_lock: ClassVar[threading.Lock] = threading.Lock()
     _shared_monitors_running: ClassVar[bool] = False
+    _shared_curse_monitor: ClassVar['CurseMonitor | None'] = None
     # callback 格式：(threshold, condition, callback, fired)
     # condition: 'below' 或 'above'；fired 為 list[bool] 以支援 mutable 邊緣觸發狀態
     _hp_callbacks: ClassVar[list] = []
@@ -83,6 +84,8 @@ class GameCharacter(MapleTask, abc.ABC):
                 cls._shared_gw = GameWindow()
                 cls._shared_mt = MinimapTask(cls._shared_gw)
                 cls._shared_mt.start()
+                from .CurseMonitor import CurseMonitor
+                cls._shared_curse_monitor = CurseMonitor(cls._shared_gw)
             if not cls._shared_monitors_running:
                 cls._shared_monitors_running = True
                 threading.Thread(target=cls._hp_monitor_loop, daemon=True).start()
@@ -175,6 +178,10 @@ class GameCharacter(MapleTask, abc.ABC):
         cls._hp_callbacks.append((threshold, condition, callback, [False]))
 
     @classmethod
+    def unregister_hp_callback(cls, callback: Callable[[], None]):
+        cls._hp_callbacks = [e for e in cls._hp_callbacks if e[2] is not callback]
+
+    @classmethod
     def register_mp_callback(cls, threshold: float, callback: Callable[[], None],
                              condition: str = 'below'):
         """
@@ -244,6 +251,11 @@ class GameCharacter(MapleTask, abc.ABC):
     def shared_game_window(cls) -> GameWindow | None:
         """回傳類別共用的 GameWindow 實例。"""
         return cls._shared_gw
+
+    @classmethod
+    def shared_curse_monitor(cls) -> 'CurseMonitor | None':
+        """回傳類別共用的 CurseMonitor 實例。"""
+        return cls._shared_curse_monitor
 
     @classmethod
     def _read_stat(cls, region: tuple) -> float | None:

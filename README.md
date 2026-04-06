@@ -73,7 +73,7 @@ uv run python main.py
 }
 ```
 
-> `channel_id`：在 Discord 頻道上按右鍵 → **複製頻道 ID**（需先在「使用者設定 → 進階」啟用「開發者模式」）。
+> `channel_id`：在 Discord 文字頻道上按右鍵 → **複製頻道 ID**（需先在「使用者設定 → 進階」啟用「開發者模式」）。
 > `allowed_user_ids`：空陣列表示允許所有人使用指令；填入使用者 ID 則只允許指定人員。
 
 ### 4. 可用指令
