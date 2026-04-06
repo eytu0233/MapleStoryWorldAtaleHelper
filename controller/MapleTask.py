@@ -64,6 +64,7 @@ class MapleTask(abc.ABC, metaclass=_SingletonABCMeta):
         if self.is_running:
             return
         self.is_running = True
+        self.stop_event.clear()   # 清除上一次 stop() 殘留的訊號，避免 task() 立即退出
         self.wait_event.set()
         if self.is_started is False:
             self.is_started = True

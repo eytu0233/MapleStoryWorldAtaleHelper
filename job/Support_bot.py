@@ -16,6 +16,7 @@ _FREE_MARKET_FILE = 'free_market.json'
 _MINIMAP_Y_TOLERANCE   = 0.05   # 確認進入自由市場的 y 容差
 _FREE_MARKET_WAIT_SECS = 2.0    # 按下按鈕後等待確認的秒數
 _BUTTON_JITTER_PX      = 5      # 按鈕 x 隨機位移（像素）
+_EXIT_CONFIRM_WAIT_SECS = 1.5   # 按上鍵後等待畫面切換的秒數
 
 _logger = MSLogger('SupportBot')
 
@@ -126,32 +127,44 @@ class EnterFreeMarketCommand(Command):
 # ── 移動到出口位置 ─────────────────────────────────────────────────
 
 class MoveToExitCommand(Command):
-    """在自由市場內移動到 free_market_exit 指定的小地圖位置。"""
+    """在自由市場內移動到 free_market_exit 指定的精確小地圖 x 位置。
 
-    _TOLERANCE = 0.04
+    使用與 MinimapTask.find_dot() 相同的 3 位小數精度做完全比對，
+    不接受誤差——必須走到 target_x 才停止。
 
-    def __init__(self, char: 'SupportBot', q: queue.Queue, fm_cfg: dict):
+    skip_wait=True：到達後直接嘗試離開（用於離開失敗後的重試流程）。
+    skip_wait=False：到達後進入正常等待流程。
+    """
+
+    # find_dot 回傳值精確到小數第 3 位，容差設為半個最小單位
+    _EXACT_TOL = 0.01
+
+    def __init__(self, char: 'SupportBot', q: queue.Queue, fm_cfg: dict,
+                 skip_wait: bool = False):
         super().__init__(CommandType.CONDITION)
-        self._char   = char
-        self._queue  = q
-        self._fm_cfg = fm_cfg
+        self._char      = char
+        self._queue     = q
+        self._fm_cfg    = fm_cfg
+        self._skip_wait = skip_wait
 
     def release(self): pass
+
+    def _next_command(self):
+        if self._skip_wait:
+            return ExitFreeMarketCommand(self._char, self._queue, self._fm_cfg)
+        return WaitInFreeMarketCommand(self._char, self._queue, self._fm_cfg)
 
     def trigger_command(self):
         self.interrupt_event.clear()
         target_x = self._fm_cfg['free_market_exit']['minimap_x']
 
-        dist = abs(self._char.map_x - target_x)
-        if dist <= self._TOLERANCE:
+        if abs(self._char.map_x - target_x) <= self._EXACT_TOL:
             _logger.info(f'[MoveToExit] 已在目標位置 x={self._char.map_x:.3f}')
-            self._queue.put(WaitInFreeMarketCommand(
-                self._char, self._queue, self._fm_cfg
-            ))
+            self._queue.put(self._next_command())
             return
 
         direction = 'left' if self._char.map_x > target_x else 'right'
-        _logger.info(f'[MoveToExit] 移動 →{direction} target_x={target_x:.3f}')
+        _logger.info(f'[MoveToExit] 移動 →{direction} target_x={target_x:.3f} 當前x={self._char.map_x:.3f}')
 
         reached = [False]
 
@@ -160,7 +173,8 @@ class MoveToExitCommand(Command):
             self.interrupt_command()
 
         eid = self._char.minimap_task.register_pos_event(
-            condition=lambda x, y: abs(x - target_x) <= self._TOLERANCE,
+            condition=lambda x, y: abs(x - target_x) <= self._EXACT_TOL or
+                                   (x <= target_x if direction == 'left' else x >= target_x),
             callback=_on_reached,
             once=True,
         )
@@ -174,11 +188,12 @@ class MoveToExitCommand(Command):
             self._queue.put(self)
             return
 
-        _logger.info(f'[MoveToExit] 到達目標位置 x={self._char.map_x:.3f}')
-        self._queue.put(WaitInFreeMarketCommand(
-            self._char, self._queue, self._fm_cfg
-        ))
-
+        if abs(self._char.map_x - target_x) <= self._EXACT_TOL:
+            _logger.info(f'[MoveToExit] 到達目標位置 x={self._char.map_x:.3f}')
+            self._queue.put(self._next_command())
+        else :
+            _logger.info(f'[MoveToExit] 尚未到達目標位置 x={self._char.map_x:.3f} 重試')
+            self._queue.put(self)
 
 # ── 在自由市場等待 ─────────────────────────────────────────────────
 
@@ -210,7 +225,7 @@ class WaitInFreeMarketCommand(Command):
 # ── 離開自由市場 ───────────────────────────────────────────────────
 
 class ExitFreeMarketCommand(Command):
-    """按上方向鍵離開自由市場，還原小地圖邊界，重新施放 buff。"""
+    """按上方向鍵離開自由市場，確認成功後還原小地圖邊界並重新施放 buff。"""
 
     def __init__(self, char: 'SupportBot', q: queue.Queue, fm_cfg: dict):
         super().__init__(CommandType.CONDITION)
@@ -231,14 +246,31 @@ class ExitFreeMarketCommand(Command):
             _logger.info('[ExitFM] 被打斷')
             return
 
-        # 還原原始小地圖邊界
-        self._char.restore_minimap_bounds()
-        _logger.info('[ExitFM] 已還原小地圖邊界，重新施放 buff')
+        # 等待畫面切換
+        interrupted = self.interrupt_event.wait(_EXIT_CONFIRM_WAIT_SECS)
+        if interrupted:
+            _logger.info('[ExitFM] 確認等待中被打斷')
+            return
 
-        self._queue.put(CastBuffsCommand(
-            self._char, self._queue,
-            self._char.buff_skills, self._fm_cfg
-        ))
+        # 確認是否已離開自由市場（map_y 不再接近出口 y）
+        target_y = self._fm_cfg['free_market_exit']['minimap_y']
+        actual_y = self._char.map_y
+        _logger.info(f'[ExitFM] 確認位置 map_y={actual_y:.3f} target_y={target_y:.3f}')
+
+        if abs(actual_y - target_y) > _MINIMAP_Y_TOLERANCE:
+            # 成功離開自由市場
+            self._char.restore_minimap_bounds()
+            _logger.info('[ExitFM] 已離開自由市場，還原小地圖邊界，重新施放 buff')
+            self._queue.put(CastBuffsCommand(
+                self._char, self._queue,
+                self._char.buff_skills, self._fm_cfg
+            ))
+        else:
+            # 仍在自由市場，重新移到出口再試
+            _logger.warning(f'[ExitFM] 仍在自由市場 (map_y={actual_y:.3f})，重新移動到出口')
+            self._queue.put(MoveToExitCommand(
+                self._char, self._queue, self._fm_cfg, skip_wait=True
+            ))
 
 
 # ── SupportBot 主類別 ──────────────────────────────────────────────

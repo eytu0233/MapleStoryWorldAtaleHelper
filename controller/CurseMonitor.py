@@ -4,6 +4,9 @@ CurseMonitor — 偵測遊戲詛咒狀態通知框，並透過 notify_fn 發送�
 偵測策略（純色彩篩選）：
   HSV 深紫背景 + 亮紫文字 + 面積條件
 
+須連續 confirm_frames 幀皆偵測到才觸發通知，避免誤報。
+confirm_frames 可透過 config.json 的 curse_monitor.confirm_frames 設定，預設為 5。
+
 觸發後啟動 _NOTIFY_COOLDOWN 秒冷卻，期間不重複通知。
 
 使用方式：
@@ -11,6 +14,7 @@ CurseMonitor — 偵測遊戲詛咒狀態通知框，並透過 notify_fn 發送�
   monitor.start()
 """
 
+import json
 import time
 from typing import Callable
 
@@ -39,8 +43,18 @@ _MIN_BG_AREA   = 3000   # 背景連通塊最小像素面積（px²）
 _TXT_RATIO_MIN = 0.01   # 亮紫文字佔背景框面積的最小比例
 
 # ── 冷卻與輪詢間隔 ──────────────────────────────────────────────
-_NOTIFY_COOLDOWN = 60.0   # 秒，通知後的冷卻時間（防洗版）
-_POLL_INTERVAL   = 1.5    # 秒，正常輪詢間隔
+_NOTIFY_COOLDOWN    = 60.0   # 秒，通知後的冷卻時間（防洗版）
+_POLL_INTERVAL      = 1.5    # 秒，正常輪詢間隔
+_DEFAULT_CONFIRM_FRAMES = 5  # 預設連續確認幀數
+
+
+def _load_confirm_frames() -> int:
+    try:
+        with open('config.json', 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+        return int(cfg.get('curse_monitor', {}).get('confirm_frames', _DEFAULT_CONFIRM_FRAMES))
+    except Exception:
+        return _DEFAULT_CONFIRM_FRAMES
 
 
 class CurseMonitor(MapleTask):
@@ -52,6 +66,8 @@ class CurseMonitor(MapleTask):
         self._gw = game_window
         self._notify_fn = notify_fn
         self._last_notified: float = 0.0
+        self._confirm_frames: int = _load_confirm_frames()
+        self._consecutive: int = 0
 
     # ── 色彩篩選 ─────────────────────────────────────────────────
 
@@ -85,23 +101,35 @@ class CurseMonitor(MapleTask):
     # ── 主迴圈 ───────────────────────────────────────────────────
 
     def task(self):
-        _logger.info("[CurseMonitor] 啟動")
+        _logger.info(f"[CurseMonitor] 啟動（confirm_frames={self._confirm_frames}）")
+        self._consecutive = 0
         while True:
             if self.wait_stop_event(_POLL_INTERVAL):
                 break
 
             gw = self._gw
             if gw is None or not gw.is_valid:
+                self._consecutive = 0
                 continue
 
             frame = gw.capture(*_SCAN_REGION)
             if frame is None:
+                self._consecutive = 0
                 continue
 
             try:
-                if not self._color_detect(frame):
+                if self._color_detect(frame):
+                    self._consecutive += 1
+                    _logger.debug(f"[CurseMonitor] 連續偵測 {self._consecutive}/{self._confirm_frames}")
+                else:
+                    self._consecutive = 0
                     continue
 
+                if self._consecutive < self._confirm_frames:
+                    continue
+
+                # 達到連續確認幀數，重置計數並檢查冷卻
+                self._consecutive = 0
                 now = time.monotonic()
                 if now - self._last_notified < _NOTIFY_COOLDOWN:
                     continue
@@ -112,5 +140,6 @@ class CurseMonitor(MapleTask):
 
             except Exception as e:
                 _logger.error(f"[CurseMonitor] 偵測異常: {e}")
+                self._consecutive = 0
 
         _logger.info("[CurseMonitor] 停止")

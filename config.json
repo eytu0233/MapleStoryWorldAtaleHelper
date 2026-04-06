@@ -1,12 +1,11 @@
 {
-  "boss": {
-    "殭屍菇菇王": "zombi.png",
-    "菇菇王": "mushking2.png"
+  "curse_monitor": {
+    "confirm_frames": 5
   },
   "minimap_bounds": {
-    "x": 45,
-    "y": 250,
-    "w": 450,
-    "h": 100
+    "x": 0.00699,
+    "y": 0.1364,
+    "w": 0.14019,
+    "h": 0.14487
   }
 }
