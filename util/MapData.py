@@ -18,7 +18,7 @@ class MapData:
         name          : 地圖名稱（同時作為存檔檔名）
         points        : 按經過順序排列的唯一格點列表 [(x, y), ...]，座標 0.0～1.0
         climb_indices : 爬升點在 points 中的索引集合
-        bounds        : 小地圖邊界（遊戲視窗像素座標）(x0, y0, x1, y1)
+        bounds        : 小地圖邊界（遊戲視窗比例座標，0.0～1.0）(rx0, ry0, rx1, ry1)
         record_decimals: 格點精度（小數位數）
         climb_x_tol   : 爬升偵測 x 軸容差
         climb_y_step  : 爬升偵測 y 軸最小步距
@@ -27,7 +27,7 @@ class MapData:
     name: str
     points: list[tuple[float, float]] = field(default_factory=list)
     climb_indices: set[int] = field(default_factory=set)
-    bounds: tuple[int, int, int, int] = (0, 0, 0, 0)   # (x0, y0, x1, y1) 視窗像素
+    bounds: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # (rx0, ry0, rx1, ry1) 視窗比例
     record_decimals: int = 2
     climb_x_tol: float = 0.04
     climb_y_step: float = 0.008

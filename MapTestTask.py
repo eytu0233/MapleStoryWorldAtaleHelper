@@ -47,7 +47,7 @@ class MapTestTask(GameCharacter):
         self._map_data         = md
         self._map_points_set   = md.point_set
         self._climb_points_set = md.climb_point_set
-        if md.bounds != (0, 0, 0, 0):
+        if md.bounds != (0.0, 0.0, 0.0, 0.0):
             self.minimap_task.set_bounds(*md.bounds)
         _logger.info(f"[MapTestTask] 已載入：{md}")
 

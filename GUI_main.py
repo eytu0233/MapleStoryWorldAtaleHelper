@@ -182,7 +182,7 @@ class MainWindow:
 
         bounds_title = tk.Frame(frame, bg="#ecf0f1")
         bounds_title.pack(fill=tk.X)
-        tk.Label(bounds_title, text="小地圖邊界（視窗像素）",
+        tk.Label(bounds_title, text="小地圖邊界（比例 0~1）",
                  font=("Arial", 9, "bold"), bg="#ecf0f1", fg="#555").pack(side=tk.LEFT)
         self.winsize_label = tk.Label(bounds_title, text="視窗: --",
                                       font=("Arial", 9), bg="#ecf0f1", fg="#888")
@@ -191,7 +191,7 @@ class MainWindow:
         pos_row = tk.Frame(frame, bg="#ecf0f1")
         pos_row.pack(fill=tk.X, pady=2)
         mm = config.get("minimap_bounds", {})
-        for label, default, key, attr in [("X:", 66, "x", "_mm_x"), ("Y:", 185, "y", "_mm_y")]:
+        for label, default, key, attr in [("X:", 0.00699, "x", "_mm_x"), ("Y:", 0.13629, "y", "_mm_y")]:
             tk.Label(pos_row, text=label, font=("Arial", 10),
                      bg="#ecf0f1").pack(side=tk.LEFT)
             var = tk.StringVar(value=str(mm.get(key, default)))
@@ -201,7 +201,7 @@ class MainWindow:
 
         size_row = tk.Frame(frame, bg="#ecf0f1")
         size_row.pack(fill=tk.X, pady=2)
-        for label, default, key, attr in [("寬:", 253, "w", "_mm_w"), ("高:", 238, "h", "_mm_h")]:
+        for label, default, key, attr in [("寬:", 0.13509, "w", "_mm_w"), ("高:", 0.16455, "h", "_mm_h")]:
             tk.Label(size_row, text=label, font=("Arial", 10),
                      bg="#ecf0f1").pack(side=tk.LEFT)
             var = tk.StringVar(value=str(mm.get(key, default)))
@@ -238,20 +238,20 @@ class MainWindow:
         if result is None:
             _logger.info("[GUI] 小地圖邊界自動偵測失敗，請手動設定")
             return
-        x0, y0, x1, y1 = result
-        self._mm_x.set(str(x0))
-        self._mm_y.set(str(y0))
-        self._mm_w.set(str(x1 - x0))
-        self._mm_h.set(str(y1 - y0))
-        _logger.info(f"[GUI] 自動偵測結果：x={x0} y={y0} w={x1-x0} h={y1-y0}")
+        rx0, ry0, rx1, ry1 = result
+        self._mm_x.set(str(round(rx0, 5)))
+        self._mm_y.set(str(round(ry0, 5)))
+        self._mm_w.set(str(round(rx1 - rx0, 5)))
+        self._mm_h.set(str(round(ry1 - ry0, 5)))
+        _logger.info(f"[GUI] 自動偵測結果：x={rx0} y={ry0} w={rx1-rx0:.5f} h={ry1-ry0:.5f}")
         self._apply_minimap_bounds()
 
     def _apply_minimap_bounds(self):
         try:
-            x = int(self._mm_x.get())
-            y = int(self._mm_y.get())
-            w = int(self._mm_w.get())
-            h = int(self._mm_h.get())
+            x = float(self._mm_x.get())
+            y = float(self._mm_y.get())
+            w = float(self._mm_w.get())
+            h = float(self._mm_h.get())
         except ValueError:
             _logger.info("[GUI] 邊界數值格式錯誤")
             return
@@ -273,8 +273,8 @@ class MainWindow:
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             mm = data.get("minimap_bounds", data)
-            x = int(mm["x"]); y = int(mm["y"])
-            w = int(mm["w"]); h = int(mm["h"])
+            x = float(mm["x"]); y = float(mm["y"])
+            w = float(mm["w"]); h = float(mm["h"])
         except Exception as e:
             _logger.info(f"[GUI] 讀取邊界 JSON 失敗：{e}")
             return
@@ -287,10 +287,10 @@ class MainWindow:
 
     def _save_minimap_bounds_to_file(self):
         try:
-            x = int(self._mm_x.get())
-            y = int(self._mm_y.get())
-            w = int(self._mm_w.get())
-            h = int(self._mm_h.get())
+            x = float(self._mm_x.get())
+            y = float(self._mm_y.get())
+            w = float(self._mm_w.get())
+            h = float(self._mm_h.get())
         except ValueError:
             _logger.info("[GUI] 邊界數值格式錯誤")
             return
@@ -471,9 +471,9 @@ _mm = config.get("minimap_bounds", {})
 if _mm:
     _mt = GameCharacter.shared_minimap()
     if _mt is not None:
-        _mt.set_bounds(_mm.get("x", 66), _mm.get("y", 185),
-                       _mm.get("x", 66) + _mm.get("w", 253),
-                       _mm.get("y", 185) + _mm.get("h", 238))
+        _mt.set_bounds(_mm.get("x", 0.00699), _mm.get("y", 0.13629),
+                       _mm.get("x", 0.00699) + _mm.get("w", 0.13509),
+                       _mm.get("y", 0.13629) + _mm.get("h", 0.16455))
 
 # ── 啟動 ─────────────────────────────────────────────────────
 root = tk.Tk()

@@ -13,11 +13,12 @@ from .MapleTask import MapleTask
 
 _logger = MSLogger('MinimapTask')
 
-# ── 小地圖固定邊界預設值（遊戲視窗像素座標）──────────────────────
-_DEFAULT_X0 = 66
-_DEFAULT_Y0 = 185
-_DEFAULT_X1 = 319
-_DEFAULT_Y1 = 423
+# ── 小地圖固定邊界預設值（遊戲視窗比例，0.0～1.0）────────────────
+# 基準解析度 2576×1416，原像素 (66, 185, 319, 423)
+_DEFAULT_RX0 = 66  / 2576   # ≈ 0.02562
+_DEFAULT_RY0 = 185 / 1416   # ≈ 0.13065
+_DEFAULT_RX1 = 319 / 2576   # ≈ 0.12384
+_DEFAULT_RY1 = 423 / 1416   # ≈ 0.29873
 
 # 黃點 HSV 範圍（H 26–38 為純黃；橘色隊友點 H ≈ 10–22，刻意排除）
 _DOT_LOWER    = np.array([26, 150, 180])
@@ -38,7 +39,7 @@ class MinimapTask(MapleTask):
     """
     持續偵測小地圖黃點位置的獨立 Task。
 
-    邊界固定由 set_bounds() 設定（遊戲視窗像素座標），不再自動偵測。
+    邊界固定由 set_bounds() 設定（遊戲視窗比例座標，0.0～1.0），不再自動偵測。
     偵測結果：
         pos : 黃點相對於邊界區域的比例座標 tuple[float, float]（0.0～1.0）
     """
@@ -48,11 +49,11 @@ class MinimapTask(MapleTask):
         self.game_window = game_window
         self.pos: tuple[float, float] = (0.0, 0.0)
 
-        # 固定邊界（遊戲視窗像素座標）
-        self._x0 = _DEFAULT_X0
-        self._y0 = _DEFAULT_Y0
-        self._x1 = _DEFAULT_X1
-        self._y1 = _DEFAULT_Y1
+        # 固定邊界（遊戲視窗比例座標，0.0～1.0）
+        self._rx0 = _DEFAULT_RX0
+        self._ry0 = _DEFAULT_RY0
+        self._rx1 = _DEFAULT_RX1
+        self._ry1 = _DEFAULT_RY1
 
         # 地圖錄製
         self._map_points: list[tuple[float, float]] = []
@@ -66,26 +67,22 @@ class MinimapTask(MapleTask):
 
     # ── 邊界設定 ─────────────────────────────────────────────────
 
-    def set_bounds(self, x0: int, y0: int, x1: int, y1: int):
-        """設定小地圖邊界（遊戲視窗像素座標）。"""
-        self._x0, self._y0 = x0, y0
-        self._x1, self._y1 = x1, y1
-        _logger.info(f"[MinimapTask] 邊界已更新：({x0}, {y0}) → ({x1}, {y1})")
+    def set_bounds(self, rx0: float, ry0: float, rx1: float, ry1: float):
+        """設定小地圖邊界（遊戲視窗比例座標，0.0～1.0）。"""
+        self._rx0, self._ry0 = rx0, ry0
+        self._rx1, self._ry1 = rx1, ry1
+        _logger.info(f"[MinimapTask] 邊界已更新：({rx0:.4f}, {ry0:.4f}) → ({rx1:.4f}, {ry1:.4f})")
 
-    def get_bounds(self) -> tuple[int, int, int, int]:
-        return self._x0, self._y0, self._x1, self._y1
+    def get_bounds(self) -> tuple[float, float, float, float]:
+        return self._rx0, self._ry0, self._rx1, self._ry1
 
     def bounds_as_window_region(self) -> tuple[float, float, float, float] | None:
-        """將固定邊界轉換為視窗比例座標 (x, y, w, h)，供 DebugOverlay 繪製。"""
-        gw = self.game_window
-        if not gw.is_valid:
+        """回傳視窗比例座標 (x, y, w, h)，供 DebugOverlay 繪製。"""
+        if not self.game_window.is_valid:
             return None
-        W, H = gw.width, gw.height
-        if W <= 0 or H <= 0:
-            return None
-        return (self._x0 / W, self._y0 / H,
-                (self._x1 - self._x0) / W,
-                (self._y1 - self._y0) / H)
+        return (self._rx0, self._ry0,
+                self._rx1 - self._rx0,
+                self._ry1 - self._ry0)
 
     # ── 位置事件 ─────────────────────────────────────────────────
 
@@ -197,7 +194,7 @@ class MinimapTask(MapleTask):
             name=name,
             points=list(self._map_points),
             climb_indices=climb_indices,
-            bounds=(self._x0, self._y0, self._x1, self._y1),
+            bounds=(self._rx0, self._ry0, self._rx1, self._ry1),
             record_decimals=_RECORD_DECIMALS,
             climb_x_tol=_CLIMB_X_TOL,
             climb_y_step=_CLIMB_Y_STEP,
@@ -250,7 +247,7 @@ class MinimapTask(MapleTask):
             name=f"map_{ts}",
             points=list(self._map_points),
             climb_indices=climb_indices,
-            bounds=(self._x0, self._y0, self._x1, self._y1),
+            bounds=(self._rx0, self._ry0, self._rx1, self._ry1),
             record_decimals=_RECORD_DECIMALS,
             climb_x_tol=_CLIMB_X_TOL,
             climb_y_step=_CLIMB_Y_STEP,
@@ -265,19 +262,17 @@ class MinimapTask(MapleTask):
         while True:
             gw = self.game_window
             if gw.is_valid:
-                W, H = gw.width, gw.height
-                if W > 0 and H > 0:
-                    img = gw.capture(
-                        self._x0 / W, self._y0 / H,
-                        (self._x1 - self._x0) / W,
-                        (self._y1 - self._y0) / H,
-                    )
-                    if img is not None:
-                        result = self.find_dot(img)
-                        if result is not None:
-                            self.pos = result
-                            self._record_point(result)
-                            self._check_pos_events(result[0], result[1])
+                img = gw.capture(
+                    self._rx0, self._ry0,
+                    self._rx1 - self._rx0,
+                    self._ry1 - self._ry0,
+                )
+                if img is not None:
+                    result = self.find_dot(img)
+                    if result is not None:
+                        self.pos = result
+                        self._record_point(result)
+                        self._check_pos_events(result[0], result[1])
 
             if self.wait_stop_event(SCAN_INTERVAL):
                 break

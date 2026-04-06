@@ -1,10 +1,10 @@
 {
   "_comment": "OakBeetle 地圖設定 — x/y 為小地圖比例（0.0 = 左/上，1.0 = 右/下）",
   "minimap_bounds": {
-    "x": 35,
-    "y": 260,
-    "w": 300,
-    "h": 200
+    "x": 0.01359,
+    "y": 0.18362,
+    "w": 0.11646,
+    "h": 0.14124
   },
   "timing": {
     "_comment": "attack_interval 攻擊冷卻秒數；aux_interval 輔助技能釋放間隔秒數",

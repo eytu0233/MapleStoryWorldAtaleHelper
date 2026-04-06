@@ -59,11 +59,12 @@ def _px_matches(px, rgb: tuple[int, int, int], tol: int) -> bool:
             abs(int(px[2]) - rgb[2]) <= tol)
 
 
-def detect_minimap_bounds(game_window) -> tuple[int, int, int, int] | None:
+def detect_minimap_bounds(game_window) -> tuple[float, float, float, float] | None:
     """
-    自動偵測小地圖在遊戲視窗中的像素邊界 (x0, y0, x1, y1)。
+    自動偵測小地圖在遊戲視窗中的比例邊界 (rx0, ry0, rx1, ry1)，值域 0.0～1.0。
 
-    小地圖固定位於視窗左上角，函式只截取前 40%×60% 的區域。
+    小地圖固定位於視窗左上角，函式只截取前 40%×60% 的區域進行偵測，
+    最後將結果轉換回全視窗比例座標後回傳。
 
     邊界辨識方式（垂直白線搜尋法）：
       - 從 x=0 開始，逐欄掃描白色像素連續段是否超過 100 pixels。
@@ -72,7 +73,7 @@ def detect_minimap_bounds(game_window) -> tuple[int, int, int, int] | None:
       - y 範圍由左邊界白線的起迄決定。
 
     Returns:
-        (x0, y0, x1, y1) 視窗像素座標，找不到時回傳 None。
+        (rx0, ry0, rx1, ry1) 全視窗比例座標，找不到時回傳 None。
     """
     from controller.GameWindow import GameWindow
     if not game_window.is_valid:
@@ -241,7 +242,13 @@ def detect_minimap_bounds(game_window) -> tuple[int, int, int, int] | None:
         _logger.info("[detect_minimap_bounds] 邊界無效（x0>=x1 或 y0>=y1）")
         return None
 
-    return x0, y0, x1, y1
+    # 將截圖局部像素座標轉換為全視窗比例（截圖涵蓋 40%×60% 視窗範圍）
+    rx0 = round(x0 / w * 0.4, 5)
+    ry0 = round(y0 / h * 0.6, 5)
+    rx1 = round(x1 / w * 0.4, 5)
+    ry1 = round(y1 / h * 0.6, 5)
+    _logger.info(f"[detect_minimap_bounds] 比例結果：rx0={rx0} ry0={ry0} rx1={rx1} ry1={ry1}")
+    return rx0, ry0, rx1, ry1
 
 
 def key_down(key):
