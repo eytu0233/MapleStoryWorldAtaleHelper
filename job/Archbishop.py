@@ -86,6 +86,9 @@ class MapleBlessing(_BuffCommand):
 class DragonCommand(_BuffCommand):
     def __init__(self): super().__init__('a')
 
+class InfiniteMana(_BuffCommand):
+    def __init__(self): super().__init__('shift')
+
 
 class HealCommand(Command):
     _queued: 'HealCommand | None' = None  # 追蹤 queue 中的實例，防止重複入隊
