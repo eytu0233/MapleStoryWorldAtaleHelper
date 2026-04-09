@@ -179,8 +179,9 @@ class TeleportStepCommand(Command):
         self.interrupt_event.wait(0.3)
         pyautogui.keyUp('c')
         pyautogui.keyUp(self._direction)
-        # 無論是否被打斷，重新評估位置
-        self._queue.put(SearchStepCommand(self._char, self._queue, self._direction, self._bounce_count))
+        # 無論是否被打斷，重新評估位置（任務停止中則不入列，避免殘留污染下一輪）
+        if not self._char.stop_event.is_set():
+            self._queue.put(SearchStepCommand(self._char, self._queue, self._direction, self._bounce_count))
 
 
 class WalkToBoundaryCommand(Command):
@@ -215,7 +216,8 @@ class WalkToBoundaryCommand(Command):
 
         if not reached[0]:
             _logger.info(f'[NORMAL][WalkToBoundary] 被打斷 重試')
-            self._queue.put(SearchStepCommand(self._char, self._queue, self._direction, self._bounce_count))
+            if not self._char.stop_event.is_set():
+                self._queue.put(SearchStepCommand(self._char, self._queue, self._direction, self._bounce_count))
             return
 
         new_dir    = 'right' if self._direction == 'left' else 'left'
@@ -295,7 +297,8 @@ class MoveToXCommand(Command):
 
         if not reached[0]:
             _logger.info(f'[NORMAL][MoveToX] 被打斷 重試')
-            self._queue.put(self)
+            if not self._char.stop_event.is_set():
+                self._queue.put(self)
             return
 
         self._queue.put(self._next_cmd)
@@ -337,11 +340,13 @@ class DropDownCommand(Command):
                 _logger.info(f'[NORMAL][DropDown] 被打斷 但已在底層 繼續')
             else:
                 _logger.info(f'[NORMAL][DropDown] 被打斷 重試')
-                self._queue.put(self)
+                if not self._char.stop_event.is_set():
+                    self._queue.put(self)
                 return
 
         _logger.info(f'[NORMAL][DropDown] 到達底層 pos=({self._char.map_x:.2f},{self._char.map_y:.2f})')
-        self._queue.put(SearchStepCommand(self._char, self._queue, self._direction, 0))
+        if not self._char.stop_event.is_set():
+            self._queue.put(SearchStepCommand(self._char, self._queue, self._direction, 0))
 
 
 class GoUpApproachCommand(Command):
@@ -392,8 +397,9 @@ class GoUpTeleportCommand(Command):
         self.interrupt_event.wait(0.3)
         pyautogui.keyUp('c')
         pyautogui.keyUp(move_dir)
-        # 重新評估距離
-        self._queue.put(GoUpApproachCommand(self._char, self._queue, self._teleport_x, self._direction, self._layer))
+        # 重新評估距離（任務停止中則不入列）
+        if not self._char.stop_event.is_set():
+            self._queue.put(GoUpApproachCommand(self._char, self._queue, self._teleport_x, self._direction, self._layer))
 
 
 class GoUpWalkCommand(Command):
@@ -431,7 +437,8 @@ class GoUpWalkCommand(Command):
 
         if not reached[0]:
             _logger.info(f'[NORMAL][GoUpWalk] 被打斷 重試')
-            self._queue.put(GoUpApproachCommand(self._char, self._queue, self._teleport_x, self._direction, self._layer))
+            if not self._char.stop_event.is_set():
+                self._queue.put(GoUpApproachCommand(self._char, self._queue, self._teleport_x, self._direction, self._layer))
             return
 
         self._queue.put(GoUpPressCommand(self._char, self._queue, self._teleport_x, self._direction, self._layer))
@@ -461,7 +468,8 @@ class GoUpPressCommand(Command):
 
         if self.interrupt_event.is_set():
             _logger.info(f'[NORMAL][GoUpPress] 被打斷')
-            self._queue.put(SearchStepCommand(self._char, self._queue, self._direction, 0))
+            if not self._char.stop_event.is_set():
+                self._queue.put(SearchStepCommand(self._char, self._queue, self._direction, 0))
             return
 
         new_layer = _get_layer(self._char)
