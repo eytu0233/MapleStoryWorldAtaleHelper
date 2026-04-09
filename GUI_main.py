@@ -72,7 +72,7 @@ def save_config(config):
 class MainWindow:
     def __init__(self, root, debug_overlay):
         self.root = root
-        self.root.title("MapleStory Worlds-Artale 輔助工具")
+        self.root.title("Helper")
         self.root.geometry("500x640")
         self.root.resizable(True, True)
         self.root.minsize(400, 500)
