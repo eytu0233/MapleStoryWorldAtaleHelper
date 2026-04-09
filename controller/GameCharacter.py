@@ -360,69 +360,11 @@ class GameCharacter(MapleTask, abc.ABC):
         pyautogui.keyUp(key)
         return stopped
 
-    def move_up(self) -> bool:
-        """
-        同時按住 alt（跳躍）+ 上方向鍵，使角色往上爬升。
-        停止條件：pos_y 連續 500 ms 未再減少，或收到 stop 訊號。
-        回傳 True 表示收到 stop 訊號。
-        """
-        import time
-        _CHECK_INTERVAL = 0.05   # 每 50 ms 取樣一次
-        _STALL_TIMEOUT  = 0.5    # pos_y 不再減少超過此秒數則停止
-
-        pyautogui.keyDown('alt')
-        pyautogui.keyDown('up')
-
-        last_decrease_time = time.monotonic()
-        last_y = self.minimap_task.pos[1]
-        stopped = False
-
-        try:
-            while True:
-                if self.wait_stop_event(_CHECK_INTERVAL):
-                    stopped = True
-                    break
-                y = self.minimap_task.pos[1]
-                if y < last_y:
-                    last_y = y
-                    last_decrease_time = time.monotonic()
-                elif time.monotonic() - last_decrease_time >= _STALL_TIMEOUT:
-                    break
-        finally:
-            pyautogui.keyUp('up')
-            pyautogui.keyUp('alt')
-
-        return stopped
-
-    def jump(self, direction: str) -> bool:
-        """按住 alt + 左/右方向鍵進行方向跳躍。回傳 True 表示收到 stop 訊號。"""
-        pyautogui.keyDown('alt')
-        stopped = self._hold_key(direction, 0.2)
-        pyautogui.keyUp('alt')
-        return stopped
-
-    def move_down(self) -> bool:
-        """先按住下方向鍵再按 alt，持續 0.5 秒後放開，讓角色穿越平台往下跳。"""
-        pyautogui.keyDown('down')
-        pyautogui.keyDown('alt')
-        stopped = self.wait_stop_event(1)
-        pyautogui.keyUp('alt')
-        pyautogui.keyUp('down')
-        return stopped
-
     def update_position(self, x: float, y: float):
         self.position.x = x
         self.position.y = y
 
     # ── 抽象方法 ─────────────────────────────────────────────────
-
-    @abc.abstractmethod
-    def move(self, direction: str) -> bool:
-        ...
-
-    @abc.abstractmethod
-    def normal_attack(self) -> bool:
-        ...
 
     @abc.abstractmethod
     def task(self):
