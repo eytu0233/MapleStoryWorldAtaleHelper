@@ -16,7 +16,8 @@ from util.GameDetector import get_artale_hwnd
 from HelperTask import HelperTask
 from util.MapData import MapData
 from MapTestTask import MapTestTask
-from NightLordTask import NightLordTask
+from job.NightLord import NightLord
+from job.LiveArchbishop import LiveArchbishop
 from GhostWomen import GhostWomen
 from lab102roomTask import Lab102RoomTask
 from job.Archbishop import Archbishop
@@ -31,12 +32,12 @@ CONFIG_FILE = "config/config.json"
 HOTKEY_MAP = [
     ("F2",  "弓手 (BowmasterTask)"),
     ("F4",  "補師機器人 (SupportBot)"),
-    ("F5",  "地圖錄製 (toggle)"),
+    ("F5",  "活7 (LiveArchbishop)"),
     ("F6",  "地圖測試 (MapTestTask)"),
     ("F7",  "主教 (Archbishop)"),
     ("F8",  "標賊鬼女"),
     ("F9",  "研究所102號房"),
-    ("F10", "標賊龍蛋"),
+    ("F10", "標賊蛋龍 (NightLord)"),
     ("F11", "Helper"),
 ]
 
@@ -417,14 +418,8 @@ def on_press(key):
         _logger.info("F4 - SupportBot")
         support_bot_task.toggle()
     if key.name == 'f5':
-        mt = GameCharacter.shared_minimap()
-        if mt is not None:
-            if mt.recording:
-                _logger.info("F5 - 地圖錄製 停止")
-                mt.stop_recording()
-            else:
-                _logger.info("F5 - 地圖錄製 開始")
-                mt.start_recording()
+        _logger.info("F5 - 活7 (LiveArchbishop)")
+        live_archbishop_task.toggle()
     if key.name == 'f6':
         _logger.info("F6 - MapTestTask")
         map_test_task.toggle()
@@ -438,7 +433,7 @@ def on_press(key):
         _logger.info("F9 - 研究所102號房")
         lab102room_task.toggle()
     if key.name == 'f10':
-        _logger.info("F10 - 標賊龍蛋")
+        _logger.info("F10 - 標賊蛋龍 (NightLord)")
         night_lord_task.toggle()
     if key.name == 'f11':
         _logger.info("F11 - HelperTask")
@@ -449,7 +444,8 @@ def on_press(key):
 bowmaster_task   = BowmasterTask()
 support_bot_task = SupportBot()
 archbishop_task  = Archbishop()
-night_lord_task  = NightLordTask()
+night_lord_task      = NightLord()
+live_archbishop_task = LiveArchbishop()
 ghost_women_task = GhostWomen()
 map_test_task    = MapTestTask()   # 初始化時自動載入最新地圖
 lab102room_task  = Lab102RoomTask()
