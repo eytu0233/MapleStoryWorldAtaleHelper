@@ -18,7 +18,7 @@ from util.MapData import MapData
 from MapTestTask import MapTestTask
 from job.NightLord import NightLord
 from job.LiveArchbishop import LiveArchbishop
-from GhostWomen import GhostWomen
+from job.NightLord101 import NightLord101
 from lab102roomTask import Lab102RoomTask
 from job.Archbishop import Archbishop
 from job.Support_bot import SupportBot
@@ -35,7 +35,7 @@ HOTKEY_MAP = [
     ("F5",  "活7 (LiveArchbishop)"),
     ("F6",  "地圖測試 (MapTestTask)"),
     ("F7",  "主教 (Archbishop)"),
-    ("F8",  "標賊鬼女"),
+    ("F8",  "標賊101 (NightLord101)"),
     ("F9",  "研究所102號房"),
     ("F10", "標賊蛋龍 (NightLord)"),
     ("F11", "Helper"),
@@ -427,8 +427,8 @@ def on_press(key):
         _logger.info("F7 - Archbishop")
         archbishop_task.toggle()
     if key.name == 'f8':
-        _logger.info("F8 - 標賊鬼女")
-        ghost_women_task.toggle()
+        _logger.info("F8 - NightLord101")
+        night_lord_101_task.toggle()
     if key.name == 'f9':
         _logger.info("F9 - 研究所102號房")
         lab102room_task.toggle()
@@ -446,7 +446,7 @@ support_bot_task = SupportBot()
 archbishop_task  = Archbishop()
 night_lord_task      = NightLord()
 live_archbishop_task = LiveArchbishop()
-ghost_women_task = GhostWomen()
+night_lord_101_task = NightLord101()
 map_test_task    = MapTestTask()   # 初始化時自動載入最新地圖
 lab102room_task  = Lab102RoomTask()
 helper_task      = HelperTask()
