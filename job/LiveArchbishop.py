@@ -12,8 +12,8 @@ from util.logger import MSLogger
 _logger = MSLogger('LiveArchbishop')
 
 _BUFF_INTERVAL = 270   # 秒
-_MOVE_X_MIN    = 0.46
-_MOVE_X_MAX    = 0.50
+_MOVE_X_MIN    = 0.48
+_MOVE_X_MAX    = 0.54
 _MOVE_X_TOL    = 0.01
 _MAP_CONFIG    = os.path.join(os.path.dirname(__file__), '..', 'maps', 'map_dragon_nest.json')
 
@@ -26,7 +26,7 @@ class SitDownCommand(Command):
 
     def trigger_command(self):
         self.interrupt_event.clear()
-        self.interrupt_event.wait(1)
+        self.interrupt_event.wait(2)
         _logger.info('[SitDown] 坐下')
         pyautogui.keyDown('0')
         self.interrupt_event.wait(0.5)
@@ -71,7 +71,7 @@ class _LiveMoveCommand(Command):
         _logger.info(f'[LiveMove] cur_x={cur_x:.2f} →{move_dir} (dist_left={dist_left:.2f} dist_right={dist_right:.2f})')
 
         pyautogui.keyDown(move_dir)
-        self.interrupt_event.wait(0.1)
+        self.interrupt_event.wait(0.05)
         pyautogui.keyUp(move_dir)
 
         if self.interrupt_event.is_set():
