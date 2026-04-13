@@ -429,6 +429,8 @@ def on_press(key):
     if key.name == 'f8':
         _logger.info("F8 - NightLord101")
         night_lord_101_task.toggle()
+        if night_lord_101_task.is_running:
+            debug_overlay.set_character(night_lord_101_task)
     if key.name == 'f9':
         _logger.info("F9 - 研究所102號房")
         lab102room_task.toggle()

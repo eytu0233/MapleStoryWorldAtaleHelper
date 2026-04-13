@@ -49,6 +49,10 @@ class DebugOverlay:
         if self.on_hide_callback:
             self.on_hide_callback()
 
+    def set_character(self, character: GameCharacter):
+        self.character = character
+        _logger.info(f"[DebugOverlay] 切換角色：{character.name}")
+
     def toggle(self):
         if self.window:
             self.hide()
@@ -157,6 +161,19 @@ class DebugOverlay:
                         text=f"角色 ({sx}, {sy}) {sw}×{sh}",
                         fill='#c7a8d6', font=('Arial', 8, 'bold'), anchor='sw'
                     )
+                    # ── 角色中心點 ────────────────────────────────
+                    cx = self.character.screen_center_x
+                    cy = self.character.screen_center_y
+                    r = 4
+                    self.canvas.create_oval(
+                        cx - r, cy - r, cx + r, cy + r,
+                        fill='#c7a8d6', outline='white', width=1
+                    )
+                    self.canvas.create_text(
+                        cx + r + 2, cy,
+                        text=f"center ({cx}, {cy})",
+                        fill='#c7a8d6', font=('Arial', 8, 'bold'), anchor='w'
+                    )
 
                 # ── HP / MP 辨識範圍 ─────────────────────────────
                 self._draw_region(ww, wh, _HP_REGION, '#ff4444', 'HP', self.character.hp)
@@ -164,6 +181,41 @@ class DebugOverlay:
 
                 # ── 詛咒偵測掃描範圍 ─────────────────────────────
                 self._draw_region(ww, wh, _CURSE_SCAN_REGION, '#cc44ff', '詛咒偵測範圍')
+
+                # ── ModelController 怪物偵測框 ────────────────────
+                if hasattr(self.character, '_monster_detections'):
+                    for det in self.character._monster_detections:
+                        x1, y1, x2, y2 = det['bbox']
+                        cx = int((x1 + x2) / 2)
+                        cy = int((y1 + y2) / 2)
+                        self.canvas.create_rectangle(
+                            x1, y1, x2, y2,
+                            outline='#ff8800', width=2
+                        )
+                        self.canvas.create_text(
+                            x1, y1 - 2,
+                            text=f"{det['name']} ({cx}, {cy})",
+                            fill='#ff8800', font=('Arial', 8, 'bold'), anchor='sw'
+                        )
+
+                # ── ModelController 角色位置標記 ──────────────────
+                char_cx = getattr(self.character, '_char_screen_cx', 0)
+                char_cy = getattr(self.character, '_char_screen_cy', 0)
+                if char_cx > 0 and char_cy > 0:
+                    r = 6
+                    self.canvas.create_line(
+                        char_cx - r, char_cy, char_cx + r, char_cy,
+                        fill='#00ff88', width=2
+                    )
+                    self.canvas.create_line(
+                        char_cx, char_cy - r, char_cx, char_cy + r,
+                        fill='#00ff88', width=2
+                    )
+                    self.canvas.create_text(
+                        char_cx + r + 2, char_cy,
+                        text=f"x={char_cx} y={char_cy}",
+                        fill='#00ff88', font=('Arial', 8, 'bold'), anchor='w'
+                    )
 
         except Exception as e:
             _logger.error(f"[DebugOverlay] 更新失敗: {e}")

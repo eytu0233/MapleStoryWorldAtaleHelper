@@ -40,7 +40,7 @@ _CHAR_COLOR_TOLERANCE = 20                  # 每通道容差（±20）
 _CHAR_MIN_AREA        = 30                  # 最小輪廓面積（px²）
 _CHAR_SEARCH_X_MIN    = 0
 _CHAR_SEARCH_X_MAX    = 1
-_CHAR_SEARCH_Y_MIN    = 0.6               # 排除小地圖（上方 60%）
+_CHAR_SEARCH_Y_MIN    = 0.5               # 排除小地圖（上方 50%）
 _CHAR_SEARCH_Y_MAX    = 0.80               # 排除 HP/MP bar（下方 20%）
 
 @dataclass
@@ -93,7 +93,7 @@ class GameCharacter(MapleTask, abc.ABC):
                 cls._shared_monitors_running = True
                 threading.Thread(target=cls._hp_monitor_loop, daemon=True).start()
                 threading.Thread(target=cls._mp_monitor_loop, daemon=True).start()
-                threading.Thread(target=cls._screen_detect_loop, daemon=True).start()
+                # threading.Thread(target=cls._screen_detect_loop, daemon=True).start()
                 threading.Thread(target=cls._composite_monitor_loop, daemon=True).start()
 
     @classmethod
@@ -129,44 +129,44 @@ class GameCharacter(MapleTask, abc.ABC):
             except Exception as e:
                 _logger.error(f"[GameCharacter] MP monitor 異常: {e}")
 
-    @classmethod
-    def _screen_detect_loop(cls):
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        r0, g0, b0 = _CHAR_COLOR_RGB
-        tol = _CHAR_COLOR_TOLERANCE
-        while not cls._shared_stat_stop.wait(0.1):
-            try:
-                gw = cls._shared_gw
-                if gw is None or not gw.is_valid:
-                    continue
-                frame = gw.capture(0.0, 0.0, 1.0, 1.0)
-                if frame is None:
-                    continue
-                h, w = frame.shape[:2]
-                x0 = int(w * _CHAR_SEARCH_X_MIN)
-                x1 = int(w * _CHAR_SEARCH_X_MAX)
-                y0 = int(h * _CHAR_SEARCH_Y_MIN)
-                y1 = int(h * _CHAR_SEARCH_Y_MAX)
-                roi = frame[y0:y1, x0:x1]
-                mask = (
-                    (roi[:, :, 0] >= r0 - tol) & (roi[:, :, 0] <= r0 + tol) &
-                    (roi[:, :, 1] >= g0 - tol) & (roi[:, :, 1] <= g0 + tol) &
-                    (roi[:, :, 2] >= b0 - tol) & (roi[:, :, 2] <= b0 + tol)
-                ).astype(np.uint8) * 255
-                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                if contours:
-                    largest = max(contours, key=cv2.contourArea)
-                    if cv2.contourArea(largest) >= _CHAR_MIN_AREA:
-                        cx, cy, cw, ch = cv2.boundingRect(largest)
-                        cls._shared_screen_x = cx + x0
-                        cls._shared_screen_y = cy + y0
-                        cls._shared_screen_w = cw
-                        cls._shared_screen_h = ch
-                        cls._shared_screen_center_x = cx + x0 + cw // 2
-                        cls._shared_screen_center_y = cy + y0 + ch // 2
-            except Exception as e:
-                _logger.error(f"[GameCharacter] screen detect 異常: {e}")
+    # @classmethod
+    # def _screen_detect_loop(cls):
+    #     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    #     r0, g0, b0 = _CHAR_COLOR_RGB
+    #     tol = _CHAR_COLOR_TOLERANCE
+    #     while not cls._shared_stat_stop.wait(0.1):
+    #         try:
+    #             gw = cls._shared_gw
+    #             if gw is None or not gw.is_valid:
+    #                 continue
+    #             frame = gw.capture(0.0, 0.0, 1.0, 1.0)
+    #             if frame is None:
+    #                 continue
+    #             h, w = frame.shape[:2]
+    #             x0 = int(w * _CHAR_SEARCH_X_MIN)
+    #             x1 = int(w * _CHAR_SEARCH_X_MAX)
+    #             y0 = int(h * _CHAR_SEARCH_Y_MIN)
+    #             y1 = int(h * _CHAR_SEARCH_Y_MAX)
+    #             roi = frame[y0:y1, x0:x1]
+    #             mask = (
+    #                 (roi[:, :, 0] >= r0 - tol) & (roi[:, :, 0] <= r0 + tol) &
+    #                 (roi[:, :, 1] >= g0 - tol) & (roi[:, :, 1] <= g0 + tol) &
+    #                 (roi[:, :, 2] >= b0 - tol) & (roi[:, :, 2] <= b0 + tol)
+    #             ).astype(np.uint8) * 255
+    #             mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    #             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    #             if contours:
+    #                 largest = max(contours, key=cv2.contourArea)
+    #                 if cv2.contourArea(largest) >= _CHAR_MIN_AREA:
+    #                     cx, cy, cw, ch = cv2.boundingRect(largest)
+    #                     cls._shared_screen_x = cx + x0
+    #                     cls._shared_screen_y = cy + y0
+    #                     cls._shared_screen_w = cw
+    #                     cls._shared_screen_h = ch
+    #                     cls._shared_screen_center_x = cx + x0 + cw // 2
+    #                     cls._shared_screen_center_y = cy + y0 + ch // 2
+    #         except Exception as e:
+    #             _logger.error(f"[GameCharacter] screen detect 異常: {e}")
 
     @classmethod
     def register_hp_callback(cls, threshold: float, callback: Callable[[], None],

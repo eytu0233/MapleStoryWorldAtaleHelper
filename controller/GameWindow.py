@@ -11,7 +11,9 @@ from util.GameDetector import get_artale_hwnd
 from util.logger import MSLogger
 
 _logger = MSLogger('GameWindow')
-_POLL_INTERVAL = 0.5  # 視窗幾何輪詢間隔（秒）
+_POLL_INTERVAL = 0.5         # 視窗幾何輪詢間隔（秒）
+_FRAME_CAPTURE_FPS = 120    # 全幀緩衝擷取速率
+_FRAME_INTERVAL = 1.0 / _FRAME_CAPTURE_FPS
 
 
 class GameWindow:
@@ -24,7 +26,8 @@ class GameWindow:
     主要功能：
         - hwnd / left / top / width / height / is_valid 屬性
         - abs_region()：將視窗比例座標轉換為絕對像素區域
-        - capture()：截取視窗內指定比例區域的畫面（RGB numpy array）
+        - get_latest_frame()：回傳最新完整視窗畫面（_FRAME_CAPTURE_FPS 緩衝，RGB numpy array）
+        - capture()：從緩衝幀裁切指定比例區域（不再直接呼叫 PrintWindow）
     """
 
     def __init__(self, poll_interval: float = _POLL_INTERVAL):
@@ -40,6 +43,12 @@ class GameWindow:
 
         self._thread = threading.Thread(target=self._poll_loop, daemon=True)
         self._thread.start()
+
+        # 全幀緩衝
+        self._frame_lock = threading.Lock()
+        self._latest_frame: np.ndarray | None = None
+        self._frame_thread = threading.Thread(target=self._frame_loop, daemon=True)
+        self._frame_thread.start()
 
     # ── 內部更新 ────────────────────────────────────────────────
 
@@ -83,6 +92,75 @@ class GameWindow:
                 self._refresh()
             except Exception:
                 pass
+
+    # ── 全幀緩衝 ────────────────────────────────────────────────
+
+    def _capture_full(self) -> np.ndarray | None:
+        """擷取完整視窗畫面（不裁切），回傳 RGB numpy array 或 None。"""
+        if not self.is_valid:
+            return None
+
+        with self._lock:
+            hwnd = self._hwnd
+            ww = self._width
+            wh = self._height
+            left = self._left
+            top = self._top
+
+        if ww <= 0 or wh <= 0:
+            return None
+
+        img = None
+        hwnd_dc = win32gui.GetWindowDC(hwnd)
+        if hwnd_dc == 0:
+            return np.array(pyautogui.screenshot(region=(left, top, ww, wh)))
+
+        mfc_dc = save_dc = bmp = None
+        try:
+            mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
+            save_dc = mfc_dc.CreateCompatibleDC()
+            bmp = win32ui.CreateBitmap()
+            bmp.CreateCompatibleBitmap(mfc_dc, ww, wh)
+            save_dc.SelectObject(bmp)
+
+            if windll.user32.PrintWindow(hwnd, save_dc.GetSafeHdc(), 2):
+                raw = bmp.GetBitmapBits(True)
+                img = np.frombuffer(raw, dtype=np.uint8).reshape(wh, ww, 4)
+                img = img[:, :, 2::-1].copy()  # BGRA → RGB
+        except Exception:
+            img = None
+        finally:
+            if bmp is not None:
+                handle = bmp.GetHandle()
+                if handle:
+                    win32gui.DeleteObject(handle)
+            if save_dc is not None:
+                save_dc.DeleteDC()
+            win32gui.ReleaseDC(hwnd, hwnd_dc)
+
+        if img is None:
+            return np.array(pyautogui.screenshot(region=(left, top, ww, wh)))
+
+        return img
+
+    def _frame_loop(self):
+        while True:
+            start = time.perf_counter()
+            try:
+                frame = self._capture_full()
+            except Exception:
+                frame = None
+            with self._frame_lock:
+                self._latest_frame = frame
+            elapsed = time.perf_counter() - start
+            sleep_time = _FRAME_INTERVAL - elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+
+    def get_latest_frame(self) -> np.ndarray | None:
+        """回傳最新完整視窗畫面（RGB numpy array）；視窗不可用時回傳 None。"""
+        with self._frame_lock:
+            return self._latest_frame
 
     # ── 公開屬性 ────────────────────────────────────────────────
 
@@ -147,69 +225,24 @@ class GameWindow:
                 w_ratio: float, h_ratio: float
                 ) -> np.ndarray | None:
         """
-        截取視窗內指定比例區域的畫面（直接從視窗 DC 擷取，不含疊加視窗）。
+        從全幀緩衝裁切指定比例區域的畫面。
 
         Args:
             x_ratio, y_ratio, w_ratio, h_ratio: 同 abs_region()
 
         Returns:
-            RGB numpy array (H×W×3)；視窗不可用時回傳 None。
+            RGB numpy array (H×W×3)；視窗不可用或緩衝尚未就緒時回傳 None。
         """
-        if not self.is_valid:
+        frame = self.get_latest_frame()
+        if frame is None:
             return None
-
-        with self._lock:
-            hwnd = self._hwnd
-            ww = self._width
-            wh = self._height
-
-        if ww <= 0 or wh <= 0:
-            return None
-
-        # 用 PrintWindow(PW_RENDERFULLCONTENT=2) 直接從視窗 DC 擷取，
-        # 不含任何疊加在上方的視窗（例如 DebugOverlay）
-        img = None
-        hwnd_dc = win32gui.GetWindowDC(hwnd)
-        if hwnd_dc == 0:
-            # DC 無效（視窗最小化或暫時不可用）→ 退回 pyautogui
-            region = self.abs_region(x_ratio, y_ratio, w_ratio, h_ratio)
-            return np.array(pyautogui.screenshot(region=region))
-
-        mfc_dc = save_dc = bmp = None
-        try:
-            mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
-            save_dc = mfc_dc.CreateCompatibleDC()
-            bmp = win32ui.CreateBitmap()
-            bmp.CreateCompatibleBitmap(mfc_dc, ww, wh)
-            save_dc.SelectObject(bmp)
-
-            if windll.user32.PrintWindow(hwnd, save_dc.GetSafeHdc(), 2):
-                raw = bmp.GetBitmapBits(True)
-                img = np.frombuffer(raw, dtype=np.uint8).reshape(wh, ww, 4)
-                img = img[:, :, 2::-1].copy()  # BGRA → RGB
-        except Exception:
-            img = None
-        finally:
-            if bmp is not None:
-                handle = bmp.GetHandle()
-                if handle:
-                    win32gui.DeleteObject(handle)
-            if save_dc is not None:
-                save_dc.DeleteDC()
-            # mfc_dc 只是包裝 hwnd_dc，不擁有它；由 ReleaseDC 釋放，此處不呼叫 DeleteDC
-            win32gui.ReleaseDC(hwnd, hwnd_dc)
-
-        if img is None:
-            # PrintWindow 失敗時退回 pyautogui（仍可能含 DebugOverlay）
-            region = self.abs_region(x_ratio, y_ratio, w_ratio, h_ratio)
-            return np.array(pyautogui.screenshot(region=region))
-
-        # 裁切到要求的比例區域
-        rx = int(ww * x_ratio)
-        ry = int(wh * y_ratio)
-        rw = int(ww * w_ratio)
-        rh = int(wh * h_ratio)
-        return img[ry:ry + rh, rx:rx + rw]
+        fh, fw = frame.shape[:2]
+        rx = int(fw * x_ratio)
+        ry = int(fh * y_ratio)
+        rw = int(fw * w_ratio)
+        rh = int(fh * h_ratio)
+        cropped = frame[ry:ry + rh, rx:rx + rw]
+        return cropped if cropped.size > 0 else None
 
     def __repr__(self) -> str:
         with self._lock:

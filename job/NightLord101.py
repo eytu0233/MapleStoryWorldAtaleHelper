@@ -3,7 +3,6 @@ import os
 import queue
 import random
 import threading
-import time
 from typing import Optional
 
 import pyautogui
@@ -11,6 +10,7 @@ import pyautogui
 from controller.Command import Command, CommandType
 from controller.CommandGameCharacter import CommandGameCharacter
 from controller.GameCharacter import GameCharacter
+from controller.ModelController import ModelController
 from discord_bot.discord_bot import DiscordBot
 from util.logger import MSLogger
 
@@ -18,7 +18,11 @@ _logger = MSLogger('NightLord101')
 
 _BUFF_INTERVAL           = 270   # 秒
 _HP_DEAD_NOTIFY_INTERVAL = 300   # 秒（5 分鐘）
-_MAP_CONFIG = os.path.join(os.path.dirname(__file__), '..', 'maps', 'map_cd_101.json')
+_MAP_CONFIG    = os.path.join(os.path.dirname(__file__), '..', 'maps', 'map_cd_101.json')
+_MONSTER_MODEL = os.path.join(os.path.dirname(__file__), '..', 'model', '101_cd.pt')
+_MONSTER_DETECT_NAME = 'Artale101CD'
+_CHAR_MODEL      = os.path.join(os.path.dirname(__file__), '..', 'model', 'night_lord.pt')
+_CHAR_DETECT_NAME = 'character'
 
 # ── 地圖常數 ──────────────────────────────────────────────────────
 _LEFT_BOUNDARY  = 0.05
@@ -40,6 +44,8 @@ _TELEPORT_X = {
 }
 
 _TELEPORT_TOLERANCE = 0.01
+_ATTACK_RANGE_PX    = 600   # 方向前方怪物偵測距離（視窗像素）
+_ATTACK_RANGE_Y     = 100   # 垂直方向誤差容許值（像素，±）
 
 
 def _get_layer(char) -> str:
@@ -98,7 +104,7 @@ class LuckSpell(_BuffCommand):
 
 
 class SearchStepCommand(Command):
-    """位置評估分派器：距邊界 > 0.3 用二段跳，否則步行。無 wait。"""
+    """位置評估分派器：直接步行至邊界。無 wait。"""
 
     def __init__(self, char, q: queue.Queue,
                  direction: str | None = None, bounce_count: int = 0):
@@ -117,35 +123,7 @@ class SearchStepCommand(Command):
         dist      = abs(self._char.map_x - boundary)
         _logger.info(f'[NORMAL][SearchStep] dir={direction} pos=({self._char.map_x:.2f},{self._char.map_y:.2f}) dist={dist:.2f} bounce={self._bounce_count}')
 
-        if dist > 0.3 and _get_layer(self._char) != 'top':
-            self._queue.put(DoubleJumpStepCommand(self._char, self._queue, direction, self._bounce_count))
-        else:
-            self._queue.put(WalkToBoundaryCommand(self._char, self._queue, direction, self._bounce_count))
-
-
-class DoubleJumpStepCommand(Command):
-    """單次二段跳步驟：按住方向鍵並按一次 alt，完成後重新評估位置。"""
-
-    def __init__(self, char, q: queue.Queue, direction: str, bounce_count: int):
-        super().__init__(CommandType.CONDITION)
-        self._char         = char
-        self._queue        = q
-        self._direction    = direction
-        self._bounce_count = bounce_count
-
-    def release(self): pass
-
-    def trigger_command(self):
-        self.interrupt_event.clear()
-        _logger.info(f'[NORMAL][DoubleJumpStep] →{self._direction}')
-        pyautogui.keyDown(self._direction)
-        pyautogui.keyDown('alt')
-        self.interrupt_event.wait(0.3)
-        pyautogui.keyUp('alt')
-        pyautogui.keyUp(self._direction)
-        # 無論是否被打斷，重新評估位置（任務停止中則不入列，避免殘留污染下一輪）
-        if not self._char.stop_event.is_set():
-            self._queue.put(SearchStepCommand(self._char, self._queue, self._direction, self._bounce_count))
+        self._queue.put(WalkToBoundaryCommand(self._char, self._queue, direction, self._bounce_count))
 
 
 class WalkToBoundaryCommand(Command):
@@ -173,6 +151,7 @@ class WalkToBoundaryCommand(Command):
             self.interrupt_command()
 
         eid = self._char.minimap_task.register_pos_event(condition, _on_boundary, once=True)
+        self._char._facing = self._direction
         pyautogui.keyDown(self._direction)
         self.interrupt_event.wait(10)
         pyautogui.keyUp(self._direction)
@@ -314,7 +293,7 @@ class DropDownCommand(Command):
 
 
 class GoUpApproachCommand(Command):
-    """換層前靠近傳送點的分派器：距離 > 0.3 用二段跳，近則步行。無 wait。"""
+    """換層前靠近傳送點的分派器：步行至傳送點。無 wait。"""
 
     def __init__(self, char, q: queue.Queue, teleport_x: float, direction: str, layer: str):
         super().__init__(CommandType.CONDITION)
@@ -333,36 +312,8 @@ class GoUpApproachCommand(Command):
 
         if dist <= _TELEPORT_TOLERANCE:
             self._queue.put(GoUpPressCommand(self._char, self._queue, self._teleport_x, self._direction, self._layer))
-        elif dist > 0.3:
-            self._queue.put(DoubleJumpGoUpCommand(self._char, self._queue, self._teleport_x, self._direction, self._layer))
         else:
             self._queue.put(GoUpWalkCommand(self._char, self._queue, self._teleport_x, self._direction, self._layer))
-
-
-class DoubleJumpGoUpCommand(Command):
-    """二段跳靠近換層傳送點：按住方向鍵並按一次 alt，完成後重新評估距離。"""
-
-    def __init__(self, char, q: queue.Queue, teleport_x: float, direction: str, layer: str):
-        super().__init__(CommandType.CONDITION)
-        self._char       = char
-        self._queue      = q
-        self._teleport_x = teleport_x
-        self._direction  = direction
-        self._layer      = layer
-
-    def release(self): pass
-
-    def trigger_command(self):
-        self.interrupt_event.clear()
-        move_dir = 'left' if self._char.map_x > self._teleport_x else 'right'
-        _logger.info(f'[NORMAL][DoubleJumpGoUp] →{move_dir}')
-        pyautogui.keyDown(move_dir)
-        pyautogui.press('alt')
-        pyautogui.press('alt')
-        pyautogui.keyUp(move_dir)
-        # 重新評估距離（任務停止中則不入列）
-        if not self._char.stop_event.is_set():
-            self._queue.put(GoUpApproachCommand(self._char, self._queue, self._teleport_x, self._direction, self._layer))
 
 
 class GoUpWalkCommand(Command):
@@ -447,41 +398,97 @@ class GoUpPressCommand(Command):
 # ── Attack ────────────────────────────────────────────────────────
 
 class AttackCommand(Command):
+    """
+    怪物偵測觸發的攻擊指令。
 
-    def __init__(self, priority_queue: queue.Queue):
+    狀態追蹤（類別變數，全域唯一）：
+      _queued     — 有實例在 priority queue 中等待執行（尚未 trigger）
+      _is_running — 有實例正在執行 trigger_command
+
+    入隊規則：_queued is None 且 NOT _is_running 才能加入。
+
+    自循環邏輯：
+      trigger_command 結束後，若前方 _ATTACK_RANGE_PX 內仍有怪物，
+      則直接將 self 重加入 priority queue，繼續攻擊直到前方清空。
+      若被外部打斷（interrupt_event 提前 set），則不重加。
+    """
+
+    _queued:     'AttackCommand | None' = None
+    _is_running: bool                   = False
+
+    @classmethod
+    def _try_enqueue(cls, q: queue.Queue, priority_queue: queue.Queue,
+                     char: 'NightLord101', direction: str):
+        """_queued 為 None 且未在執行中，才建立新實例並入隊。"""
+        if cls._queued is not None or cls._is_running:
+            return False
+        obj = cls(priority_queue, char, direction)
+        cls._queued = obj
+        q.put(obj)
+        return True
+
+    def __init__(self, priority_queue: queue.Queue, char: 'NightLord101', direction: str):
         super().__init__(CommandType.CONDITION)
-        self._queue      = priority_queue
-        self._counter    = 0
-        self._cancelled  = False
-        self._pending_timer: threading.Timer | None = None
+        self._queue     = priority_queue
+        self._char      = char
+        self._direction = direction
+        self._cancelled = False
 
     def release(self):
         self._cancelled = True
-        if self._pending_timer is not None:
-            self._pending_timer.cancel()
-            self._pending_timer = None
+
+    def _find_monster_direction(self) -> str | None:
+        """在左右 _ATTACK_RANGE_PX、垂直 ±_ATTACK_RANGE_Y 範圍內尋找怪物，回傳攻擊方向或 None。"""
+        cx = self._char._char_screen_cx
+        cy = self._char._char_screen_cy
+        if cx == 0:
+            return None
+        for d in self._char._monster_detections:
+            x1, y1, x2, y2 = d['bbox']
+            mcx = (x1 + x2) / 2
+            mcy = (y1 + y2) / 2
+            if abs(mcy - cy) > _ATTACK_RANGE_Y:
+                continue
+            if cx - _ATTACK_RANGE_PX <= mcx < cx:
+                return 'left'
+            if cx < mcx <= cx + _ATTACK_RANGE_PX:
+                return 'right'
+        return None
 
     def trigger_command(self):
-        if self._cancelled:
-            return
-        self.interrupt_event.clear()
-        _logger.info('[PRIORITY][AttackCommand] 攻擊開始')
-        pyautogui.keyDown('z')
-        self.interrupt_event.wait(2)
-        pyautogui.keyUp('z')
+        # 從 queue 取出：不再「已入隊」，進入執行中狀態
+        AttackCommand._queued     = None
+        AttackCommand._is_running = True
+        try:
+            if self._cancelled:
+                return
+            self.interrupt_event.clear()
 
-        if self.interrupt_event.is_set():
-            _logger.info('[PRIORITY][AttackCommand] 攻擊被中斷')
-        else:
+            # 轉向（立即，無需等待）
+            self._char._facing = self._direction
+            pyautogui.keyDown(self._direction)
+            pyautogui.keyUp(self._direction)
+
+            _logger.info(f'[PRIORITY][AttackCommand] 攻擊開始 dir={self._direction}')
+            pyautogui.keyDown('z')
+            self.interrupt_event.wait(0.4)
+            pyautogui.keyUp('z')
+
+            if self.interrupt_event.is_set():
+                _logger.info('[PRIORITY][AttackCommand] 攻擊被中斷，不再繼續')
+                return
+
             _logger.info('[PRIORITY][AttackCommand] 攻擊結束')
 
-        if self._cancelled:
-            return
-        delay = random.randint(1500, 3000) / 1000
-        t = threading.Timer(delay, self._queue.put, args=(self,))
-        t.daemon = True
-        self._pending_timer = t
-        t.start()
+            # 攻擊完畢後，若範圍內仍有怪物則繼續攻擊
+            next_dir = self._find_monster_direction()
+            if not self._cancelled and next_dir is not None:
+                _logger.info(f'[PRIORITY][AttackCommand] 仍有怪物，繼續攻擊 dir={next_dir}')
+                self._direction   = next_dir
+                AttackCommand._queued = self   # 重入隊前先鎖定，避免 _is_running=False 瞬間被搶先
+                self._queue.put(self)
+        finally:
+            AttackCommand._is_running = False
 
 
 
@@ -491,11 +498,15 @@ class NightLord101(CommandGameCharacter):
 
     def __init__(self, discord_bot: Optional[DiscordBot] = None):
         super().__init__(name='NightLord101')
-        self._discord_bot                                   = discord_bot
-        self._attack_cmd: AttackCommand | None             = None
-        self._attack_initial_timer: threading.Timer | None = None
-        self._hp_dead_callback                             = None
-        self._hp_notify_timer: threading.Timer | None      = None
+        self._discord_bot                              = discord_bot
+        self._hp_dead_callback                         = None
+        self._hp_notify_timer: threading.Timer | None  = None
+        self._monster_monitor: ModelController | None   = None
+        self._monster_detections: list[dict]           = []
+        self._char_monitor: ModelController | None     = None
+        self._char_screen_cx: int                      = 0
+        self._char_screen_cy: int                      = 0
+        self._facing: str                              = 'right'
 
     def _on_hp_dead(self):
         """HP 歸零初次觸發：立即通知，並啟動每 5 分鐘的重複通知。"""
@@ -533,15 +544,54 @@ class NightLord101(CommandGameCharacter):
         self._buff_timer.daemon = True
         self._buff_timer.start()
 
+    def _on_char_detected(self, detections: list[dict]):
+        for d in detections:
+            if d['name'] == _CHAR_DETECT_NAME:
+                x1, y1, x2, y2 = d['bbox']
+                self._char_screen_cx = int((x1 + x2) / 2)
+                self._char_screen_cy = int((y1 + y2) / 2)
+                return
+
+    def _on_monster_detected(self, detections: list[dict]):
+        filtered = [d for d in detections if d['name'] == _MONSTER_DETECT_NAME]
+        self._monster_detections = filtered
+
+        if not filtered:
+            return
+        cx = self._char_screen_cx
+        cy = self._char_screen_cy
+        if cx == 0:
+            return
+        for d in filtered:
+            x1, y1, x2, y2 = d['bbox']
+            mcx = (x1 + x2) / 2
+            mcy = (y1 + y2) / 2
+            if abs(mcy - cy) > _ATTACK_RANGE_Y:
+                continue
+            if cx - _ATTACK_RANGE_PX <= mcx < cx:
+                direction = 'left'
+            elif cx < mcx <= cx + _ATTACK_RANGE_PX:
+                direction = 'right'
+            else:
+                continue
+            if AttackCommand._try_enqueue(self.priority_command_queue, self.priority_command_queue, self, direction):
+                _logger.info(f'[_on_monster_detected] 有怪物在範圍內，方向={direction}')
+            break
+
     def stop(self):
         if hasattr(self, '_buff_timer'):
             self._buff_timer.cancel()
-        if self._attack_initial_timer is not None:
-            self._attack_initial_timer.cancel()
-            self._attack_initial_timer = None
-        if self._attack_cmd is not None:
-            self._attack_cmd.release()
-            self._attack_cmd = None
+        if self._monster_monitor is not None:
+            self._monster_monitor.stop()
+            self._monster_monitor = None
+        if self._char_monitor is not None:
+            self._char_monitor.stop()
+            self._char_monitor = None
+        self._monster_detections = []
+        self._char_screen_cx = 0
+        self._char_screen_cy = 0
+        AttackCommand._queued     = None
+        AttackCommand._is_running = False
         super().stop()
         for q in (self.emerg_command_queue, self.priority_command_queue, self.command_queue):
             while not q.empty():
@@ -561,19 +611,16 @@ class NightLord101(CommandGameCharacter):
 
     def task_prepare(self):
         self._load_minimap_bounds()
-        # ── 重置所有 Command 類別狀態，確保重新啟動時乾淨 ──────────
+        # ── 重置所有狀態，確保重新啟動時乾淨 ──────────────────────────
         if self._hp_dead_callback is not None:
             GameCharacter.unregister_hp_callback(self._hp_dead_callback)
             self._hp_dead_callback = None
         if self._hp_notify_timer is not None:
             self._hp_notify_timer.cancel()
             self._hp_notify_timer = None
-        if self._attack_initial_timer is not None:
-            self._attack_initial_timer.cancel()
-            self._attack_initial_timer = None
-        if self._attack_cmd is not None:
-            self._attack_cmd.release()
-            self._attack_cmd = None
+        AttackCommand._queued     = None
+        AttackCommand._is_running = False
+        self._facing = 'right'
 
         # ── 建立全新 Command 實例並初始化 ───────────────────────────
         if self._discord_bot is not None:
@@ -581,12 +628,26 @@ class NightLord101(CommandGameCharacter):
             cb = self._on_hp_dead
             self._hp_dead_callback = cb
             GameCharacter.register_hp_callback(1.0, cb, condition='below')
+        if self._monster_monitor is not None:
+            self._monster_monitor.stop()
+            self._monster_monitor = None
+        if self._char_monitor is not None:
+            self._char_monitor.stop()
+            self._char_monitor = None
+        self._monster_detections = []
+        self._char_screen_cx = 0
+        self._char_screen_cy = 0
+        self._monster_monitor = ModelController(
+            self.game_window, _MONSTER_MODEL, self._on_monster_detected
+        )
+        self._monster_monitor.start()
+        self._char_monitor = ModelController(
+            self.game_window, _CHAR_MODEL, self._on_char_detected
+        )
+        self._char_monitor.start()
+
         self.command_queue.put(SearchStepCommand(self, self.command_queue))
         self._enqueue_buffs()
-        self._attack_cmd = AttackCommand(self.priority_command_queue)
-        self._attack_initial_timer = threading.Timer(2.0, self.priority_command_queue.put, args=(self._attack_cmd,))
-        self._attack_initial_timer.daemon = True
-        self._attack_initial_timer.start()
 
     def move(self, direction: str) -> bool:
         return self._hold_key(direction, 0.3)

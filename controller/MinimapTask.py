@@ -26,7 +26,7 @@ _DOT_UPPER    = np.array([38, 255, 255])
 _DOT_MIN_AREA = 3
 _DOT_MAX_AREA = 300
 
-SCAN_INTERVAL = 0.016  # 秒（~60fps）
+SCAN_INTERVAL = 1 / 120  # 秒（~120fps）
 
 # ── 地圖錄製參數 ──────────────────────────────────────────────
 _RECORD_DECIMALS = 2
@@ -260,14 +260,15 @@ class MinimapTask(MapleTask):
     def task(self):
         _logger.info("MinimapTask starting")
         while True:
-            gw = self.game_window
-            if gw.is_valid:
-                img = gw.capture(
-                    self._rx0, self._ry0,
-                    self._rx1 - self._rx0,
-                    self._ry1 - self._ry0,
-                )
-                if img is not None:
+            frame = self.game_window.get_latest_frame()
+            if frame is not None:
+                fh, fw = frame.shape[:2]
+                rx = int(fw * self._rx0)
+                ry = int(fh * self._ry0)
+                rw = int(fw * (self._rx1 - self._rx0))
+                rh = int(fh * (self._ry1 - self._ry0))
+                img = frame[ry:ry + rh, rx:rx + rw]
+                if img.size > 0:
                     result = self.find_dot(img)
                     if result is not None:
                         self.pos = result
