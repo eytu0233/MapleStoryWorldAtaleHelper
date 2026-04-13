@@ -1,6 +1,5 @@
 import json
 import os
-import random
 import threading
 
 import pyautogui
@@ -13,8 +12,8 @@ from util.logger import MSLogger
 _logger = MSLogger('LiveArchbishop')
 
 _BUFF_INTERVAL = 270   # 秒
-_MOVE_X_MIN    = 0.46
-_MOVE_X_MAX    = 0.50
+_MOVE_X_MIN    = 0.48
+_MOVE_X_MAX    = 0.54
 _MOVE_X_TOL    = 0.01
 _MAP_CONFIG    = os.path.join(os.path.dirname(__file__), '..', 'maps', 'map_dragon_nest.json')
 
@@ -27,6 +26,7 @@ class SitDownCommand(Command):
 
     def trigger_command(self):
         self.interrupt_event.clear()
+        self.interrupt_event.wait(2)
         _logger.info('[SitDown] 坐下')
         pyautogui.keyDown('0')
         self.interrupt_event.wait(0.5)
@@ -42,9 +42,9 @@ class _SimpleSkyAngryCommand(Command):
 
     def trigger_command(self):
         self.interrupt_event.clear()
-        _logger.info('[SimpleSkyAngry] 天怒施放 4.5s')
+        _logger.info('[SimpleSkyAngry] 天怒施放 7s')
         pyautogui.keyDown('d')
-        self.interrupt_event.wait(4.5)
+        self.interrupt_event.wait(7)
         pyautogui.keyUp('d')
         if self.interrupt_event.is_set():
             _logger.info('[SimpleSkyAngry] 被打斷')
@@ -65,35 +65,19 @@ class _LiveMoveCommand(Command):
         self.interrupt_event.clear()
         cur_x = self._char.map_x
 
-        # 從 [0.46, 0.47, 0.48, 0.49, 0.50] 挑一個與當前位置不同的目標
-        candidates = [round(x * 0.01 + _MOVE_X_MIN, 2) for x in range(5)]
-        candidates = [x for x in candidates if abs(x - cur_x) > _MOVE_X_TOL]
-        target_x = random.choice(candidates) if candidates else random.uniform(_MOVE_X_MIN, _MOVE_X_MAX)
+        dist_left = cur_x - _MOVE_X_MIN
+        dist_right = _MOVE_X_MAX - cur_x
+        move_dir = 'left' if dist_left >= dist_right else 'right'
+        _logger.info(f'[LiveMove] cur_x={cur_x:.2f} →{move_dir} (dist_left={dist_left:.2f} dist_right={dist_right:.2f})')
 
-        move_dir = 'left' if cur_x > target_x else 'right'
-        _logger.info(f'[LiveMove] cur_x={cur_x:.2f} target_x={target_x:.2f} →{move_dir}')
-
-        reached = [False]
-
-        def _on_reached():
-            reached[0] = True
-            self.interrupt_command()
-
-        eid = self._char.minimap_task.register_pos_event(
-            condition=lambda x, y: abs(x - target_x) <= _MOVE_X_TOL,
-            callback=_on_reached,
-            once=True,
-        )
         pyautogui.keyDown(move_dir)
-        self.interrupt_event.wait(5)
+        self.interrupt_event.wait(0.05)
         pyautogui.keyUp(move_dir)
-        self._char.minimap_task.unregister_pos_event(eid)
 
-        if not reached[0]:
-            _logger.info('[LiveMove] 被打斷或超時')
+        if self.interrupt_event.is_set():
+            _logger.info('[LiveMove] 被打斷')
             return
 
-        _logger.info(f'[LiveMove] 到達 x={self._char.map_x:.2f}')
         self._char.priority_command_queue.put(InfiniteMana())
         self._queue.put(_SimpleSkyAngryCommand(self._queue))
 
@@ -114,9 +98,9 @@ class LiveArchbishop(CommandGameCharacter):
             _logger.warning(f'[LiveArchbishop] 載入小地圖邊界失敗: {e}')
 
     def _enqueue_buffs(self):
+        self.priority_command_queue.put(_LiveMoveCommand(self, self.command_queue))
         for cmd in (HolySymbol(), AngelBlessing(), MapleBlessing()):
             self.priority_command_queue.put(cmd)
-        self.command_queue.put(_LiveMoveCommand(self, self.command_queue))
         self._buff_timer = threading.Timer(_BUFF_INTERVAL, self._enqueue_buffs)
         self._buff_timer.daemon = True
         self._buff_timer.start()
