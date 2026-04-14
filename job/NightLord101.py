@@ -642,7 +642,8 @@ class NightLord101(CommandGameCharacter):
         )
         self._monster_monitor.start()
         self._char_monitor = ModelController(
-            self.game_window, _CHAR_MODEL, self._on_char_detected
+            self.game_window, _CHAR_MODEL, self._on_char_detected,
+            scan_region=(0.0, 0.5, 1.0, 0.3),
         )
         self._char_monitor.start()
 

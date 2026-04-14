@@ -143,6 +143,11 @@ class ModelController:
             try:
                 detections = self._infer(frame)
                 if detections:
+                    # bbox 座標補回 scan_region 偏移，統一為視窗座標
+                    if rx != 0 or ry != 0:
+                        for d in detections:
+                            x1, y1, x2, y2 = d['bbox']
+                            d['bbox'] = (x1 + rx, y1 + ry, x2 + rx, y2 + ry)
                     self._callback(detections)
             except Exception as e:
                 _logger.error(f"[ModelController] 推理異常: {e}")
