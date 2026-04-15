@@ -21,12 +21,29 @@ _HP_DEAD_NOTIFY_INTERVAL = 300   # 秒（5 分鐘）
 _MAP_CONFIG    = os.path.join(os.path.dirname(__file__), '..', 'maps', 'map_cd_101.json')
 _MONSTER_MODEL = os.path.join(os.path.dirname(__file__), '..', 'model', '101_cd.pt')
 _MONSTER_DETECT_NAME = 'Artale101CD'
-_CHAR_MODEL      = os.path.join(os.path.dirname(__file__), '..', 'model', 'night_lord.pt')
-_CHAR_DETECT_NAME = 'character'
 
 # ── 地圖常數 ──────────────────────────────────────────────────────
 _LEFT_BOUNDARY  = 0.05
 _RIGHT_BOUNDARY = 0.98
+
+# ── 角色位置換算常數 ──────────────────────────────────────────────
+# map_x 有效範圍邊界
+_POS_LEFT_BOUND  = 0.03
+_POS_RIGHT_BOUND = 0.98
+
+# 向右行走的分段閾值與對應螢幕 X
+_RIGHT_SEG1_END   = 0.31   # (0.03, 0.31) 線性段
+_RIGHT_SEG2_END   = 0.70   # [0.31, 0.70) 固定 1360
+_RIGHT_LINEAR_X   = 1350   # 線性段滿值
+_RIGHT_MID_X      = 1360   # 固定段值
+
+# 向左行走的分段閾值與對應螢幕 X
+_LEFT_SEG1_END    = 0.29   # (0.03, 0.29) 線性段
+_LEFT_SEG2_END    = 0.69   # [0.29, 0.69) 固定 1215
+_LEFT_LINEAR_X    = 1215   # 線性段滿值（同固定段值）
+
+# 角色螢幕 Y 固定值
+_CHAR_SCREEN_Y    = 1000
 
 _TOP_Y = 0.41
 _MID_Y = 0.68
@@ -43,9 +60,10 @@ _TELEPORT_X = {
     'bot': _BOT_TELEPORT_X,
 }
 
-_TELEPORT_TOLERANCE = 0.01
-_ATTACK_RANGE_PX    = 600   # 方向前方怪物偵測距離（視窗像素）
-_ATTACK_RANGE_Y     = 100   # 垂直方向誤差容許值（像素，±）
+_TELEPORT_TOLERANCE    = 0.01
+_ATTACK_RANGE_PX       = 600   # 方向前方怪物偵測距離（視窗像素）
+_ATTACK_RANGE_Y        = 100   # 垂直方向誤差容許值（像素，±）
+_MULTI_ATTACK_THRESHOLD = 3    # 怪物數量 >= 此值時改用多體攻擊
 
 
 def _get_layer(char) -> str:
@@ -418,31 +436,39 @@ class AttackCommand(Command):
 
     @classmethod
     def _try_enqueue(cls, q: queue.Queue, priority_queue: queue.Queue,
-                     char: 'NightLord101', direction: str):
+                     char: 'NightLord101', direction: str, attack_key: str):
         """_queued 為 None 且未在執行中，才建立新實例並入隊。"""
         if cls._queued is not None or cls._is_running:
             return False
-        obj = cls(priority_queue, char, direction)
+        obj = cls(priority_queue, char, direction, attack_key)
         cls._queued = obj
         q.put(obj)
         return True
 
-    def __init__(self, priority_queue: queue.Queue, char: 'NightLord101', direction: str):
+    def __init__(self, priority_queue: queue.Queue, char: 'NightLord101',
+                 direction: str, attack_key: str):
         super().__init__(CommandType.CONDITION)
-        self._queue     = priority_queue
-        self._char      = char
-        self._direction = direction
-        self._cancelled = False
+        self._queue      = priority_queue
+        self._char       = char
+        self._direction  = direction
+        self._attack_key = attack_key
+        self._cancelled  = False
 
     def release(self):
         self._cancelled = True
 
-    def _find_monster_direction(self) -> str | None:
-        """在左右 _ATTACK_RANGE_PX、垂直 ±_ATTACK_RANGE_Y 範圍內尋找怪物，回傳攻擊方向或 None。"""
-        cx = self._char._char_screen_cx
-        cy = self._char._char_screen_cy
+    def _find_attack_info(self) -> tuple[str, str] | None:
+        """
+        在左右 _ATTACK_RANGE_PX、垂直 ±_ATTACK_RANGE_Y 範圍內統計怪物。
+        回傳 (direction, attack_key)；無怪物回傳 None。
+        attack_key：數量 >= _MULTI_ATTACK_THRESHOLD 用 'z'（多體），否則用 'c'（單體）。
+        """
+        cx = self._char._get_char_screen_cx()
+        cy = _CHAR_SCREEN_Y
         if cx == 0:
             return None
+        first_dir: str | None = None
+        count = 0
         for d in self._char._monster_detections:
             x1, y1, x2, y2 = d['bbox']
             mcx = (x1 + x2) / 2
@@ -450,10 +476,18 @@ class AttackCommand(Command):
             if abs(mcy - cy) > _ATTACK_RANGE_Y:
                 continue
             if cx - _ATTACK_RANGE_PX <= mcx < cx:
-                return 'left'
-            if cx < mcx <= cx + _ATTACK_RANGE_PX:
-                return 'right'
-        return None
+                d_dir = 'left'
+            elif cx < mcx <= cx + _ATTACK_RANGE_PX:
+                d_dir = 'right'
+            else:
+                continue
+            if first_dir is None:
+                first_dir = d_dir
+            count += 1
+        if first_dir is None:
+            return None
+        key = 'z' if count >= _MULTI_ATTACK_THRESHOLD else 'c'
+        return first_dir, key
 
     def trigger_command(self):
         # 從 queue 取出：不再「已入隊」，進入執行中狀態
@@ -469,10 +503,10 @@ class AttackCommand(Command):
             pyautogui.keyDown(self._direction)
             pyautogui.keyUp(self._direction)
 
-            _logger.info(f'[PRIORITY][AttackCommand] 攻擊開始 dir={self._direction}')
-            pyautogui.keyDown('z')
+            _logger.info(f'[PRIORITY][AttackCommand] 攻擊開始 dir={self._direction} key={self._attack_key}')
+            pyautogui.keyDown(self._attack_key)
             self.interrupt_event.wait(0.4)
-            pyautogui.keyUp('z')
+            pyautogui.keyUp(self._attack_key)
 
             if self.interrupt_event.is_set():
                 _logger.info('[PRIORITY][AttackCommand] 攻擊被中斷，不再繼續')
@@ -481,10 +515,12 @@ class AttackCommand(Command):
             _logger.info('[PRIORITY][AttackCommand] 攻擊結束')
 
             # 攻擊完畢後，若範圍內仍有怪物則繼續攻擊
-            next_dir = self._find_monster_direction()
-            if not self._cancelled and next_dir is not None:
-                _logger.info(f'[PRIORITY][AttackCommand] 仍有怪物，繼續攻擊 dir={next_dir}')
-                self._direction   = next_dir
+            info = self._find_attack_info()
+            if not self._cancelled and info is not None:
+                next_dir, next_key = info
+                _logger.info(f'[PRIORITY][AttackCommand] 仍有怪物，繼續攻擊 dir={next_dir} key={next_key}')
+                self._direction  = next_dir
+                self._attack_key = next_key
                 AttackCommand._queued = self   # 重入隊前先鎖定，避免 _is_running=False 瞬間被搶先
                 self._queue.put(self)
         finally:
@@ -503,9 +539,6 @@ class NightLord101(CommandGameCharacter):
         self._hp_notify_timer: threading.Timer | None  = None
         self._monster_monitor: ModelController | None   = None
         self._monster_detections: list[dict]           = []
-        self._char_monitor: ModelController | None     = None
-        self._char_screen_cx: int                      = 0
-        self._char_screen_cy: int                      = 0
         self._facing: str                              = 'right'
 
     def _on_hp_dead(self):
@@ -544,13 +577,24 @@ class NightLord101(CommandGameCharacter):
         self._buff_timer.daemon = True
         self._buff_timer.start()
 
-    def _on_char_detected(self, detections: list[dict]):
-        for d in detections:
-            if d['name'] == _CHAR_DETECT_NAME:
-                x1, y1, x2, y2 = d['bbox']
-                self._char_screen_cx = int((x1 + x2) / 2)
-                self._char_screen_cy = int((y1 + y2) / 2)
-                return
+    def _get_char_screen_cx(self) -> int:
+        """依 map_x 與當前朝向換算角色螢幕 X 座標；無效範圍回傳 0。"""
+        mx = self.map_x
+        if self._facing == 'right':
+            if _POS_LEFT_BOUND < mx < _RIGHT_SEG1_END:
+                return int(_RIGHT_LINEAR_X * mx / (_RIGHT_SEG1_END - _POS_LEFT_BOUND))
+            elif _RIGHT_SEG1_END <= mx < _RIGHT_SEG2_END:
+                return _RIGHT_MID_X
+            elif _RIGHT_SEG2_END <= mx < _POS_RIGHT_BOUND:
+                return int(_RIGHT_LINEAR_X * mx / (_POS_RIGHT_BOUND - _RIGHT_SEG2_END))
+        else:  # facing left
+            if _POS_LEFT_BOUND < mx < _LEFT_SEG1_END:
+                return int(_LEFT_LINEAR_X * mx / (_LEFT_SEG1_END - _POS_LEFT_BOUND))
+            elif _LEFT_SEG1_END <= mx < _LEFT_SEG2_END:
+                return _LEFT_LINEAR_X
+            elif _LEFT_SEG2_END <= mx < _POS_RIGHT_BOUND:
+                return int(_LEFT_LINEAR_X * mx / (_POS_RIGHT_BOUND - _LEFT_SEG2_END))
+        return 0
 
     def _on_monster_detected(self, detections: list[dict]):
         filtered = [d for d in detections if d['name'] == _MONSTER_DETECT_NAME]
@@ -558,10 +602,13 @@ class NightLord101(CommandGameCharacter):
 
         if not filtered:
             return
-        cx = self._char_screen_cx
-        cy = self._char_screen_cy
+        cx = self._get_char_screen_cx()
+        cy = _CHAR_SCREEN_Y
         if cx == 0:
             return
+
+        first_dir: str | None = None
+        count = 0
         for d in filtered:
             x1, y1, x2, y2 = d['bbox']
             mcx = (x1 + x2) / 2
@@ -569,14 +616,21 @@ class NightLord101(CommandGameCharacter):
             if abs(mcy - cy) > _ATTACK_RANGE_Y:
                 continue
             if cx - _ATTACK_RANGE_PX <= mcx < cx:
-                direction = 'left'
+                d_dir = 'left'
             elif cx < mcx <= cx + _ATTACK_RANGE_PX:
-                direction = 'right'
+                d_dir = 'right'
             else:
                 continue
-            if AttackCommand._try_enqueue(self.priority_command_queue, self.priority_command_queue, self, direction):
-                _logger.info(f'[_on_monster_detected] 有怪物在範圍內，方向={direction}')
-            break
+            if first_dir is None:
+                first_dir = d_dir
+            count += 1
+
+        if first_dir is None:
+            return
+        attack_key = 'z' if count >= _MULTI_ATTACK_THRESHOLD else 'c'
+        if AttackCommand._try_enqueue(self.priority_command_queue, self.priority_command_queue,
+                                      self, first_dir, attack_key):
+            _logger.info(f'[_on_monster_detected] 有怪物在範圍內，方向={first_dir} 數量={count} key={attack_key}')
 
     def stop(self):
         if hasattr(self, '_buff_timer'):
@@ -584,12 +638,7 @@ class NightLord101(CommandGameCharacter):
         if self._monster_monitor is not None:
             self._monster_monitor.stop()
             self._monster_monitor = None
-        if self._char_monitor is not None:
-            self._char_monitor.stop()
-            self._char_monitor = None
         self._monster_detections = []
-        self._char_screen_cx = 0
-        self._char_screen_cy = 0
         AttackCommand._queued     = None
         AttackCommand._is_running = False
         super().stop()
@@ -631,21 +680,11 @@ class NightLord101(CommandGameCharacter):
         if self._monster_monitor is not None:
             self._monster_monitor.stop()
             self._monster_monitor = None
-        if self._char_monitor is not None:
-            self._char_monitor.stop()
-            self._char_monitor = None
         self._monster_detections = []
-        self._char_screen_cx = 0
-        self._char_screen_cy = 0
         self._monster_monitor = ModelController(
             self.game_window, _MONSTER_MODEL, self._on_monster_detected
         )
         self._monster_monitor.start()
-        self._char_monitor = ModelController(
-            self.game_window, _CHAR_MODEL, self._on_char_detected,
-            scan_region=(0.0, 0.4, 1.0, 0.4), conf=0.4
-        )
-        self._char_monitor.start()
 
         self.command_queue.put(SearchStepCommand(self, self.command_queue))
         self._enqueue_buffs()
