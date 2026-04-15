@@ -1,3 +1,4 @@
+import json
 import tkinter as tk
 import win32gui
 
@@ -12,6 +13,17 @@ from controller.GameCharacter import (
 )
 from controller.CurseMonitor import _SCAN_REGION as _CURSE_SCAN_REGION
 from controller.MinimapTask import MinimapTask
+from util.CursorTracker import CursorTracker
+
+_CONFIG_FILE = "config/config.json"
+
+
+def _load_show_cursor_pos() -> bool:
+    try:
+        with open(_CONFIG_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f).get("show_cursor_pos", True)
+    except Exception:
+        return True
 
 
 class DebugOverlay:
@@ -36,6 +48,8 @@ class DebugOverlay:
         self.canvas.pack(fill=tk.BOTH, expand=True)
         self.canvas.bind("<Button-1>", lambda e: self.hide())
         self.running = True
+        if _load_show_cursor_pos():
+            CursorTracker().start()
         self.update_overlay()
         _logger.info(f"[DebugOverlay] 覆蓋層已顯示（{self.character.name}）")
 
@@ -216,6 +230,30 @@ class DebugOverlay:
                         text=f"x={char_cx} y={char_cy}",
                         fill='#00ff88', font=('Arial', 8, 'bold'), anchor='w'
                     )
+
+                # ── 游標位置 ──────────────────────────────────────
+                if _load_show_cursor_pos():
+                    ct = CursorTracker()
+                    if ct.is_running:
+                        # 螢幕絕對座標轉換為視窗相對座標
+                        cx = ct.x - wx
+                        cy = ct.y - wy
+                        r = 8
+                        # 十字準心
+                        self.canvas.create_line(
+                            cx - r, cy, cx + r, cy,
+                            fill='#ff0066', width=2
+                        )
+                        self.canvas.create_line(
+                            cx, cy - r, cx, cy + r,
+                            fill='#ff0066', width=2
+                        )
+                        # 座標文字（螢幕絕對值 + 視窗相對值）
+                        self.canvas.create_text(
+                            cx + r + 4, cy,
+                            text=f"游標 ({cx}, {cy})",
+                            fill='#ff0066', font=('Arial', 8, 'bold'), anchor='w'
+                        )
 
         except Exception as e:
             _logger.error(f"[DebugOverlay] 更新失敗: {e}")
