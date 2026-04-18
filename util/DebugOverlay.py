@@ -225,9 +225,15 @@ class DebugOverlay:
                         char_cx, char_cy - r, char_cx, char_cy + r,
                         fill='#00ff88', width=2
                     )
+                    layer = getattr(self.character, '_char_layer', None)
+                    mx = getattr(self.character, 'map_x', None)
+                    my = getattr(self.character, 'map_y', None)
+                    label = f"x={char_cx} y={char_cy}"
+                    if layer is not None and mx is not None and my is not None:
+                        label += f"  [{layer}] map({mx:.2f}, {my:.2f})"
                     self.canvas.create_text(
                         char_cx + r + 2, char_cy,
-                        text=f"x={char_cx} y={char_cy}",
+                        text=label,
                         fill='#00ff88', font=('Arial', 8, 'bold'), anchor='w'
                     )
 

@@ -53,7 +53,7 @@ _TOP_MID_THRESH = (_TOP_Y + _MID_Y) / 2   # 0.545
 _MID_BOT_THRESH = (_MID_Y + _BOT_Y) / 2   # 0.81
 
 _MID_TELEPORT_X = 0.06
-_BOT_TELEPORT_X = 0.33
+_BOT_TELEPORT_X = 0.31
 
 _TELEPORT_X = {
     'mid': _MID_TELEPORT_X,
@@ -63,7 +63,7 @@ _TELEPORT_X = {
 _TELEPORT_TOLERANCE    = 0.01
 _ATTACK_RANGE_PX       = 600   # 方向前方怪物偵測距離（視窗像素）
 _ATTACK_RANGE_Y        = 100   # 垂直方向誤差容許值（像素，±）
-_MULTI_ATTACK_THRESHOLD = 3    # 怪物數量 >= 此值時改用多體攻擊
+_MULTI_ATTACK_THRESHOLD = 2    # 怪物數量 >= 此值時改用多體攻擊
 
 
 def _get_layer(char) -> str:
@@ -577,23 +577,38 @@ class NightLord101(CommandGameCharacter):
         self._buff_timer.daemon = True
         self._buff_timer.start()
 
+    @property
+    def _char_screen_cx(self) -> int:
+        return self._get_char_screen_cx()
+
+    @property
+    def _char_screen_cy(self) -> int:
+        return _CHAR_SCREEN_Y
+
+    @property
+    def _char_layer(self) -> str:
+        return _get_layer(self)
+
     def _get_char_screen_cx(self) -> int:
         """依 map_x 與當前朝向換算角色螢幕 X 座標；無效範圍回傳 0。"""
         mx = self.map_x
+        screen_w = self.game_window.width
         if self._facing == 'right':
             if _POS_LEFT_BOUND < mx < _RIGHT_SEG1_END:
                 return int(_RIGHT_LINEAR_X * mx / (_RIGHT_SEG1_END - _POS_LEFT_BOUND))
             elif _RIGHT_SEG1_END <= mx < _RIGHT_SEG2_END:
                 return _RIGHT_MID_X
             elif _RIGHT_SEG2_END <= mx < _POS_RIGHT_BOUND:
-                return int(_RIGHT_LINEAR_X * mx / (_POS_RIGHT_BOUND - _RIGHT_SEG2_END))
+                t = (mx - _RIGHT_SEG2_END) / (_POS_RIGHT_BOUND - _RIGHT_SEG2_END)
+                return int((screen_w - _RIGHT_LINEAR_X) + _RIGHT_LINEAR_X * t)
         else:  # facing left
             if _POS_LEFT_BOUND < mx < _LEFT_SEG1_END:
                 return int(_LEFT_LINEAR_X * mx / (_LEFT_SEG1_END - _POS_LEFT_BOUND))
             elif _LEFT_SEG1_END <= mx < _LEFT_SEG2_END:
                 return _LEFT_LINEAR_X
             elif _LEFT_SEG2_END <= mx < _POS_RIGHT_BOUND:
-                return int(_LEFT_LINEAR_X * mx / (_POS_RIGHT_BOUND - _LEFT_SEG2_END))
+                t = (mx - _LEFT_SEG2_END) / (_POS_RIGHT_BOUND - _LEFT_SEG2_END)
+                return int((screen_w - _LEFT_LINEAR_X) + _LEFT_LINEAR_X * t)
         return 0
 
     def _on_monster_detected(self, detections: list[dict]):
