@@ -1,252 +1,423 @@
+import json
+import os
+import queue
 import threading
-import time
-from collections import deque
-from enum import Enum, auto
 
 import pyautogui
 
-from controller.GameCharacter import GameCharacter
+from controller.Command import Command, CommandType
+from controller.CommandGameCharacter import CommandGameCharacter
+from controller.ModelController import ModelController
 from util.logger import MSLogger
 
-_logger = MSLogger('BowmasterTask')
+_logger = MSLogger('BowmasterMapSeparate')
 
-SKILL1_INTERVAL = 120
-SKILL2_INTERVAL = 60
-MOVE_INTERVAL   = 90
-STEP_INTERVAL   = 15     # 攻擊開始後幾秒觸發一次移動
-
-_STEP_X_LEFT  = 0.98    # 右邊界
-_STEP_X_RIGHT = 0.66    # 左邊界
-_STEP_POLL    = 0.1     # 移動按鍵間隔（秒）
-
-Z_CHECK_CHUNK = 5
-
-
-class State(Enum):
-    ATTACK = auto()
-    MOVE = auto()
-    STEP = auto()
-    AUX = auto()
+_BUFF1_INTERVAL       = 120    # 秒
+_BUFF2_INTERVAL       = 60     # 秒
+_START_X              = 0.85   # 初始 / 回歸位置
+_LEFTMOST_X           = 0.70   # 向左追怪時的最左邊界
+_SWEEP_X              = 0.58   # 定期巡邏最左點
+_X_TOL                = 0.02
+_SWEEP_INTERVAL       = 90     # 秒：定期掃地圖間隔
+_CHASE_DURATION       = 0.5    # 秒：向左追怪移動時間
+_MAP_CONFIG           = os.path.join(os.path.dirname(__file__), '..', 'maps', 'map_dragon_nest.json')
+_MONSTER_MODEL        = os.path.join(os.path.dirname(__file__), '..', 'model', 'egg_dragon.pt')
+_MONSTER_DETECT_NAMES = {'eggDragon', 'eggDragon01'}
+_ATTACK_RANGE_PX      = 850    # 方向前方怪物偵測距離（視窗像素）
+_ATTACK_RANGE_Y       = 200    # 垂直方向誤差容許值（像素，±）
 
 
-class BowmasterTask(GameCharacter):
+# ── Buff ──────────────────────────────────────────────────────────
+
+class _Buff(Command):
+    def __init__(self, key: str, hold: float = 1.0):
+        super().__init__(CommandType.CONDITION)
+        self._key  = key
+        self._hold = hold
+
+    def release(self): pass
+
+    def trigger_command(self):
+        self.interrupt_event.clear()
+        _logger.info(f'[PRIORITY][{type(self).__name__}] 施放 key={self._key}')
+        pyautogui.keyDown(self._key)
+        interrupted = self.interrupt_event.wait(self._hold)
+        pyautogui.keyUp(self._key)
+        if interrupted:
+            _logger.info(f'[PRIORITY][{type(self).__name__}] 被打斷')
+
+
+class Buff1(_Buff):
+    def __init__(self): super().__init__('1', 1.0)
+
+class Buff2(_Buff):
+    def __init__(self): super().__init__('2', 1.0)
+
+
+# ── Attack ────────────────────────────────────────────────────────
+
+class AttackCommand(Command):
+    """
+    向左攻擊。攻擊後若左側攻擊範圍內仍有怪物則繼續；否則結束等待下次偵測觸發。
+    """
+
+    _queued:     'AttackCommand | None' = None
+    _is_running: bool                   = False
+
+    @classmethod
+    def _try_enqueue(cls, pq: queue.Queue, char: 'Bowmaster') -> bool:
+        if cls._queued is not None or cls._is_running:
+            return False
+        obj = cls(pq, char)
+        cls._queued = obj
+        pq.put(obj)
+        return True
+
+    def __init__(self, pq: queue.Queue, char: 'Bowmaster'):
+        super().__init__(CommandType.CONDITION)
+        self._queue     = pq
+        self._char      = char
+        self._cancelled = False
+
+    def release(self):
+        self._cancelled = True
+
+    def _has_monster_in_range(self) -> bool:
+        cx = self._char.screen_x
+        cy = self._char.screen_y
+        if cx == 0:
+            return False
+        for d in self._char._monster_detections:
+            x1, y1, x2, y2 = d['bbox']
+            mcx = (x1 + x2) / 2
+            mcy = (y1 + y2) / 2
+            if abs(mcy - cy) > _ATTACK_RANGE_Y:
+                continue
+            if cx - _ATTACK_RANGE_PX <= mcx < cx:
+                return True
+        return False
+
+    def trigger_command(self):
+        AttackCommand._queued     = None
+        AttackCommand._is_running = True
+        try:
+            if self._cancelled:
+                return
+            self.interrupt_event.clear()
+
+            self._char.minimap_task.char_facing = 'left'
+            pyautogui.keyDown('left')
+            pyautogui.keyUp('left')
+
+            _logger.info('[PRIORITY][AttackCommand] 攻擊 dir=left key=z')
+            pyautogui.keyDown('z')
+            self.interrupt_event.wait(1.0)
+            pyautogui.keyUp('z')
+
+            if self.interrupt_event.is_set():
+                _logger.info('[PRIORITY][AttackCommand] 被中斷')
+                return
+
+            if not self._cancelled and self._has_monster_in_range():
+                _logger.info('[PRIORITY][AttackCommand] 仍有怪物，繼續攻擊')
+                AttackCommand._queued = self
+                self._queue.put(self)
+        finally:
+            AttackCommand._is_running = False
+
+
+# ── Chase ─────────────────────────────────────────────────────────
+
+class MoveLeftChaseCommand(Command):
+    """
+    範圍外左側有怪物時，向左移動 _CHASE_DURATION 秒後重新偵測。
+    僅在 map_x > _LEFTMOST_X 且無攻擊進行中時入隊。
+    """
+
+    _queued: 'MoveLeftChaseCommand | None' = None
+
+    @classmethod
+    def _try_enqueue(cls, pq: queue.Queue, char: 'Bowmaster'):
+        if cls._queued is not None:
+            return
+        if AttackCommand._queued is not None or AttackCommand._is_running:
+            return
+        if char.map_x <= _LEFTMOST_X:
+            return
+        obj = cls(pq, char)
+        cls._queued = obj
+        pq.put(obj)
+
+    def __init__(self, pq: queue.Queue, char: 'Bowmaster'):
+        super().__init__(CommandType.CONDITION)
+        self._queue = pq
+        self._char  = char
+
+    def release(self): pass
+
+    def trigger_command(self):
+        MoveLeftChaseCommand._queued = None
+        try:
+            if self._char.map_x <= _LEFTMOST_X:
+                return
+            self.interrupt_event.clear()
+            _logger.info(f'[PRIORITY][MoveLeftChaseCommand] 向左追怪 {_CHASE_DURATION}s')
+            self._char.minimap_task.char_facing = 'left'
+            pyautogui.keyDown('left')
+            self.interrupt_event.wait(_CHASE_DURATION)
+            pyautogui.keyUp('left')
+        finally:
+            MoveLeftChaseCommand._queued = None
+
+
+# ── Move ──────────────────────────────────────────────────────────
+
+class MoveToStartCommand(Command):
+    """移動到初始位置 _START_X（0.85）。"""
+
+    _queued: 'MoveToStartCommand | None' = None
+
+    @classmethod
+    def _try_enqueue(cls, q: queue.Queue, char: 'Bowmaster'):
+        if cls._queued is not None:
+            return
+        obj = cls(q, char)
+        cls._queued = obj
+        q.put(obj)
+
+    def __init__(self, q: queue.Queue, char: 'Bowmaster'):
+        super().__init__(CommandType.CONDITION)
+        self._queue = q
+        self._char  = char
+
+    def release(self): pass
+
+    def trigger_command(self):
+        MoveToStartCommand._queued = None
+        try:
+            self.interrupt_event.clear()
+            cur_x = self._char.map_x
+            if abs(cur_x - _START_X) <= _X_TOL:
+                _logger.info('[MoveToStartCommand] 已在初始位置')
+                return
+
+            direction = 'right' if cur_x < _START_X else 'left'
+            _logger.info(f'[MoveToStartCommand] →{direction} cur={cur_x:.2f}')
+            self._char.minimap_task.char_facing = direction
+
+            reached = [False]
+
+            def _on_reached():
+                reached[0] = True
+                self.interrupt_command()
+
+            eid = self._char.minimap_task.register_pos_event(
+                condition=lambda x, y: abs(x - _START_X) <= _X_TOL,
+                callback=_on_reached,
+                once=True,
+            )
+            pyautogui.keyDown(direction)
+            self.interrupt_event.wait(15)
+            pyautogui.keyUp(direction)
+            self._char.minimap_task.unregister_pos_event(eid)
+
+            if self._char.stop_event.is_set():
+                return
+
+            if not reached[0]:
+                _logger.warning('[MoveToStartCommand] 超時，重試')
+                MoveToStartCommand._try_enqueue(self._queue, self._char)
+                return
+
+            _logger.info(f'[MoveToStartCommand] 已到達 x={self._char.map_x:.2f}')
+        finally:
+            MoveToStartCommand._queued = None
+
+
+class SweepCommand(Command):
+    """每 _SWEEP_INTERVAL 秒觸發：移動到 _SWEEP_X（0.58）後回到 _START_X（0.85）。"""
+
+    _queued: 'SweepCommand | None' = None
+
+    @classmethod
+    def _try_enqueue(cls, q: queue.Queue, char: 'Bowmaster'):
+        if cls._queued is not None:
+            return
+        obj = cls(q, char)
+        cls._queued = obj
+        q.put(obj)
+
+    def __init__(self, q: queue.Queue, char: 'Bowmaster'):
+        super().__init__(CommandType.CONDITION)
+        self._queue = q
+        self._char  = char
+
+    def release(self): pass
+
+    def trigger_command(self):
+        SweepCommand._queued = None
+        try:
+            self.interrupt_event.clear()
+            _logger.info(f'[SweepCommand] 向左掃至 x={_SWEEP_X}')
+            self._char.minimap_task.char_facing = 'left'
+
+            reached = [False]
+
+            def _on_reached():
+                reached[0] = True
+                self.interrupt_command()
+
+            eid = self._char.minimap_task.register_pos_event(
+                condition=lambda x, y: x <= _SWEEP_X + _X_TOL,
+                callback=_on_reached,
+                once=True,
+            )
+            pyautogui.keyDown('left')
+            self.interrupt_event.wait(15)
+            pyautogui.keyUp('left')
+            self._char.minimap_task.unregister_pos_event(eid)
+
+            if self._char.stop_event.is_set():
+                return
+
+            _logger.info(f'[SweepCommand] 到達 x={self._char.map_x:.2f}，回到初始位置')
+            MoveToStartCommand._try_enqueue(self._queue, self._char)
+        finally:
+            SweepCommand._queued = None
+
+
+# ── Bowmaster ─────────────────────────────────────────────────────
+
+class Bowmaster(CommandGameCharacter):
+
     def __init__(self):
         super().__init__(name='Bowmaster')
-        self.skill_ref_time = 0
-        self.last_skill1 = 0
-        self.last_skill2 = 0
-        self._step_dir = 'left'
-        self._event_queue: deque = deque()
-        self._timer_stop = threading.Event()
-        self._step_gen = 0
+        self._monster_monitor:    ModelController | None = None
+        self._monster_detections: list[dict]             = []
 
-    def move(self, direction: str) -> bool:
-        return self._hold_key(direction, 1.5)
+    # ── ModelController callback ───────────────────────────────────
 
-    def normal_attack(self) -> bool:
-        return self._hold_key('z', 1.0)
+    def _on_monster_detected(self, detections: list[dict]):
+        filtered = [d for d in detections if d['name'] in _MONSTER_DETECT_NAMES]
+        self._monster_detections = filtered
 
-    def _start_aux_timers(self):
-        self._timer_stop.clear()
+        cx = self.screen_x
+        cy = self.screen_y
+        if cx == 0:
+            return
 
-        def timer_loop(interval, state, aux_skill):
-            while not self._timer_stop.wait(interval):
-                _logger.info(f"[BowmasterTask] Timer fired: {state} aux_skill={aux_skill}")
-                self._event_queue.append((state, aux_skill))
+        in_range     = []
+        out_of_range = []
 
-        for interval, state, aux_skill in [
-            (SKILL1_INTERVAL, State.AUX,  1),
-            (SKILL2_INTERVAL, State.AUX,  2),
-            (MOVE_INTERVAL,   State.MOVE, None),
-        ]:
-            threading.Thread(target=timer_loop, args=(interval, state, aux_skill), daemon=True).start()
+        for d in filtered:
+            x1, y1, x2, y2 = d['bbox']
+            mcx = (x1 + x2) / 2
+            mcy = (y1 + y2) / 2
+            if abs(mcy - cy) > _ATTACK_RANGE_Y:
+                continue
+            if mcx < cx:  # 左側怪物
+                if cx - mcx <= _ATTACK_RANGE_PX:
+                    in_range.append(d)
+                else:
+                    out_of_range.append(d)
 
-    def _schedule_step(self):
-        """攻擊開始時呼叫，倒數 STEP_INTERVAL 秒後加入移動事件。"""
-        self._step_gen += 1
-        gen = self._step_gen
-        timer_stop = self._timer_stop
+        if in_range:
+            if AttackCommand._try_enqueue(self.priority_command_queue, self):
+                _logger.info(f'[_on_monster_detected] 範圍內 {len(in_range)} 隻，觸發攻擊')
+        elif out_of_range and self.map_x > _LEFTMOST_X:
+            MoveLeftChaseCommand._try_enqueue(self.priority_command_queue, self)
+            _logger.info(f'[_on_monster_detected] 範圍外左側 {len(out_of_range)} 隻，向左追怪')
 
-        def fire():
-            if not timer_stop.wait(STEP_INTERVAL) and self._step_gen == gen:
-                _logger.info("[BowmasterTask] Step timer fired")
-                self._event_queue.append((State.STEP, None))
+    # ── 初始化 ────────────────────────────────────────────────────
 
-        threading.Thread(target=fire, daemon=True).start()
-
-    def _cancel_timers(self):
-        self._step_gen += 1
-        self._timer_stop.set()
-
-    # --- InitState ---
-
-    def _init_pre(self):
-        _logger.info("[BowmasterTask] InitState: pre")
-
-    def _init_process(self) -> bool:
-        _logger.info("[BowmasterTask] InitState: process")
-        if self._hold_key('1', 1):
-            return True
-        if self._hold_key('2', 1):
-            return True
-        self.skill_ref_time = time.time()
-        self.last_skill1 = self.skill_ref_time
-        self.last_skill2 = self.skill_ref_time
-        return False
-
-    def _init_post(self) -> bool:
-        _logger.info("[BowmasterTask] InitState: post")
-        return self.wait_stop_event(1)
-
-    # --- AttackState ---
-
-    def _attack_pre(self) -> bool:
-        _logger.info("[BowmasterTask] AttackState: pre")
-        self._schedule_step()
-        if self.wait_stop_event(0.5):
-            return True
-        pyautogui.keyDown('z')
-        return False
-
-    def _attack_post(self):
-        _logger.info("[BowmasterTask] AttackState: post")
-        pyautogui.keyUp('z')
-
-    # --- MoveState ---
-
-    def _move_pre(self) -> bool:
-        _logger.info("[BowmasterTask] MoveState: pre")
-        return self.wait_stop_event(0.5)
-
-    def _move_process(self) -> bool:
-        _logger.info("[BowmasterTask] MoveState: process")
-        if self._hold_key('left', 1.5):
-            return True
-        if self._hold_key('right', 3):
-            return True
-        return False
-
-    def _move_post(self):
-        _logger.info("[BowmasterTask] MoveState: post")
-        for _ in range(3):
-            pyautogui.press('left')
-
-    # --- StepState ---
-
-    def _step_process(self) -> bool:
-        """
-        在 0.66 ~ 0.98 之間巡邏。
-        - x >= 0.98 → 往左直到 x <= 0.66
-        - x <= 0.66 → 往右直到 x >= 0.98
-        - 其他      → 維持方向，直到碰到對應邊界
-        到達右邊界（x >= 0.98）後往左 0.2 秒再回攻擊。
-
-        Returns:
-            True 表示收到停止訊號（task 應結束）。
-        """
-        x = self.map_x
-        if x >= _STEP_X_LEFT:
-            self._step_dir = 'left'
-        elif x <= _STEP_X_RIGHT:
-            self._step_dir = 'right'
-
-        if self._step_dir == 'left':
-            stop_condition = lambda cx, cy: cx <= _STEP_X_RIGHT
-        else:
-            stop_condition = lambda cx, cy: cx >= _STEP_X_LEFT
-
-        stop_event = threading.Event()
-        mt = self.minimap_task
-        eid = mt.register_pos_event(stop_condition, stop_event.set, once=True)
-
-        _logger.info(f"[BowmasterTask] StepState: dir={self._step_dir} x={x:.3f}")
+    def _load_minimap_bounds(self):
         try:
-            while not stop_event.is_set():
-                if self._hold_key(self._step_dir, _STEP_POLL):
-                    return True
-        finally:
-            mt.unregister_pos_event(eid)
+            with open(_MAP_CONFIG, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            mm = data['minimap_bounds']
+            self.minimap_task.set_bounds(mm['x'], mm['y'], mm['x'] + mm['w'], mm['y'] + mm['h'])
+            self.minimap_task.load_char_pos_config(data)
+            _logger.info(f'[Bowmaster] 小地圖邊界已載入: {mm}')
+        except Exception as e:
+            _logger.warning(f'[Bowmaster] 載入小地圖邊界失敗: {e}')
 
-        end_x = self.map_x
-        _logger.info(f"[BowmasterTask] StepState: done x={end_x:.3f}")
-        if end_x >= _STEP_X_LEFT:
-            _logger.info("[BowmasterTask] StepState: at right boundary, reversing left 0.2s")
-            if self._hold_key('left', 0.2):
-                return True
-        return False
+    def _enqueue_buff1(self):
+        for _ in range(2):
+            self.priority_command_queue.put(Buff1())
+        self._buff1_timer = threading.Timer(_BUFF1_INTERVAL, self._enqueue_buff1)
+        self._buff1_timer.daemon = True
+        self._buff1_timer.start()
 
-    # --- AuxState ---
+    def _enqueue_buff2(self):
+        self.priority_command_queue.put(Buff2())
+        self._buff2_timer = threading.Timer(_BUFF2_INTERVAL, self._enqueue_buff2)
+        self._buff2_timer.daemon = True
+        self._buff2_timer.start()
 
-    def _aux_process(self, skill: int) -> bool:
-        _logger.info(f"[BowmasterTask] AuxState: process (skill={skill})")
-        if skill == 1:
-            if self._hold_key('1', 1):
-                return True
-            if self._hold_key('1', 1):
-                return True
-            self.last_skill1 = time.time()
-        else:
-            if self._hold_key('2', 1):
-                return True
-            self.last_skill2 = time.time()
-        return False
-
-    # --- State machine runner ---
-
-    def task(self):
-        _logger.info("BowmasterTask starting")
-        self._event_queue.clear()
-        self._start_aux_timers()
-
-        self._init_pre()
-        if self._init_process():
-            self._cancel_timers()
-            _logger.info("BowmasterTask end")
+    def _enqueue_sweep(self):
+        if self.stop_event.is_set():
             return
-        if self._init_post():
-            self._cancel_timers()
-            _logger.info("BowmasterTask end")
-            return
+        _logger.info(f'[Bowmaster] 定期掃地圖觸發')
+        SweepCommand._try_enqueue(self.command_queue, self)
+        self._sweep_timer = threading.Timer(_SWEEP_INTERVAL, self._enqueue_sweep)
+        self._sweep_timer.daemon = True
+        self._sweep_timer.start()
 
-        state = State.ATTACK
-        aux_skill = None
+    # ── 生命週期 ──────────────────────────────────────────────────
 
-        while True:
-            if state == State.ATTACK:
-                if self._attack_pre():
+    def stop(self):
+        for attr in ('_buff1_timer', '_buff2_timer', '_sweep_timer'):
+            if hasattr(self, attr):
+                getattr(self, attr).cancel()
+        if self._monster_monitor is not None:
+            self._monster_monitor.stop()
+            self._monster_monitor = None
+        self._monster_detections      = []
+        AttackCommand._queued         = None
+        AttackCommand._is_running     = False
+        MoveLeftChaseCommand._queued  = None
+        MoveToStartCommand._queued    = None
+        SweepCommand._queued          = None
+        super().stop()
+        for q in (self.emerg_command_queue, self.priority_command_queue, self.command_queue):
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except Exception:
                     break
+        _logger.info('[Bowmaster] 已停止')
 
-                stopped = False
-                while True:
-                    if self.wait_stop_event(Z_CHECK_CHUNK):
-                        stopped = True
-                        break
-                    if self._event_queue:
-                        state, aux_skill = self._event_queue.popleft()
-                        _logger.info(f"[BowmasterTask] AttackState: → {state} aux_skill={aux_skill}")
-                        break
+    def task_prepare(self):
+        for attr in ('_buff1_timer', '_buff2_timer', '_sweep_timer'):
+            if hasattr(self, attr):
+                getattr(self, attr).cancel()
 
-                self._attack_post()
-                if stopped:
-                    break
+        self._load_minimap_bounds()
 
-            elif state == State.MOVE:
-                if self._move_pre():
-                    break
-                if self._move_process():
-                    break
-                self._move_post()
-                state, aux_skill = self._event_queue.popleft() if self._event_queue else (State.ATTACK, None)
+        AttackCommand._queued         = None
+        AttackCommand._is_running     = False
+        MoveLeftChaseCommand._queued  = None
+        MoveToStartCommand._queued    = None
+        SweepCommand._queued          = None
+        self.minimap_task.char_facing      = 'left'
+        self.minimap_task.char_y_direction = 'down'
 
-            elif state == State.STEP:
-                if self._step_process():
-                    break
-                state, aux_skill = State.ATTACK, None
+        if self._monster_monitor is not None:
+            self._monster_monitor.stop()
+            self._monster_monitor = None
+        self._monster_detections = []
+        self._monster_monitor = ModelController(
+            self.game_window, _MONSTER_MODEL, self._on_monster_detected
+        )
+        self._monster_monitor.start()
 
-            elif state == State.AUX:
-                if self._aux_process(aux_skill):
-                    break
-                state, aux_skill = self._event_queue.popleft() if self._event_queue else (State.ATTACK, None)
+        self._enqueue_buff1()
+        self._enqueue_buff2()
 
-        self._cancel_timers()
-        _logger.info("BowmasterTask end")
+        # 90 秒後開始定期掃地圖
+        self._sweep_timer = threading.Timer(_SWEEP_INTERVAL, self._enqueue_sweep)
+        self._sweep_timer.daemon = True
+        self._sweep_timer.start()
+
+        # 移動到初始位置後開始向左搜尋怪物
+        MoveToStartCommand._try_enqueue(self.command_queue, self)

@@ -4,5 +4,19 @@
     "y": 0.1364,
     "w": 0.13903,
     "h": 0.17031
+  },
+  "layers": [
+    { "id": 1, "map_y": 0.36, "map_x_min": 0.43, "map_x_max": 0.86 },
+    { "id": 2, "map_y": 0.59, "map_x_min": 0.55, "map_x_max": 0.86 },
+    { "id": 3, "map_y": 0.82, "map_x_min": 0.15, "map_x_max": 0.86 }
+  ],
+  "char_screen_x": {
+    "facing_left":  { "base_x": 1247, "left_transition": 0.45, "right_transition": 0.54 },
+    "facing_right": { "base_x": 1360, "left_transition": 0.46, "right_transition": 0.58 }
+  },
+  "char_screen_y": {
+    "default_direction": "down",
+    "up":   830,
+    "down": 960
   }
 }

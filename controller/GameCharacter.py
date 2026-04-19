@@ -68,6 +68,7 @@ class GameCharacter(MapleTask, abc.ABC):
     _shared_stat_stop: ClassVar[threading.Event] = threading.Event()
     _shared_init_lock: ClassVar[threading.Lock] = threading.Lock()
     _shared_monitors_running: ClassVar[bool] = False
+    _active_instance: ClassVar['GameCharacter | None'] = None
     _shared_curse_monitor: ClassVar['CurseMonitor | None'] = None
     # callback 格式：(threshold, condition, callback, fired)
     # condition: 'below' 或 'above'；fired 為 list[bool] 以支援 mutable 邊緣觸發狀態
@@ -305,11 +306,13 @@ class GameCharacter(MapleTask, abc.ABC):
 
     @property
     def screen_x(self) -> int:
-        return GameCharacter._shared_screen_x
+        cx = self.minimap_task.char_screen_x
+        return cx if cx != 0 else GameCharacter._shared_screen_x
 
     @property
     def screen_y(self) -> int:
-        return GameCharacter._shared_screen_y
+        cy = self.minimap_task.char_screen_y
+        return cy if cy != 0 else GameCharacter._shared_screen_y
 
     @property
     def screen_w(self) -> int:

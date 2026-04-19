@@ -57,9 +57,12 @@ class CommandGameCharacter(GameCharacter, abc.ABC):
         ...
 
     def start_event_notify(self):
+        GameCharacter._active_instance = self
         self.task_prepare()
 
     def stop_event_notify(self):
+        if GameCharacter._active_instance is self:
+            GameCharacter._active_instance = None
         if self.current_command is not None:
             self.current_command.interrupt_command()
 

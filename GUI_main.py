@@ -17,6 +17,8 @@ from HelperTask import HelperTask
 from util.MapData import MapData
 from MapTestTask import MapTestTask
 from job.NightLord import NightLord
+from job.NightLord_map_separate import NightLord as NightLordMapSeparate
+from job.BowmasterTask_map_separate import Bowmaster as BowmasterMapSeparate
 from job.LiveArchbishop import LiveArchbishop
 from job.NightLord101 import NightLord101
 from lab102roomTask import Lab102RoomTask
@@ -30,6 +32,7 @@ _logger = MSLogger('GUI')
 CONFIG_FILE = "config/config.json"
 
 HOTKEY_MAP = [
+    ("F1",  "新版弓手 (BowmasterMapSeparate)"),
     ("F2",  "弓手 (BowmasterTask)"),
     ("F4",  "補師機器人 (SupportBot)"),
     ("F5",  "活7 (LiveArchbishop)"),
@@ -39,6 +42,7 @@ HOTKEY_MAP = [
     ("F9",  "研究所102號房"),
     ("F10", "標賊蛋龍 (NightLord)"),
     ("F11", "Helper"),
+    ("F12", "新版標賊 (NightLordMapSeparate)"),
 ]
 
 
@@ -369,7 +373,7 @@ class MainWindow:
             wrap=tk.WORD
         )
         self.log_text.pack(fill=tk.BOTH, expand=True)
-        self.log("程式已啟動，使用 F2~F11 切換各功能")
+        self.log("程式已啟動，使用 F2~F12 切換各功能")
 
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -411,6 +415,9 @@ class MainWindow:
 def on_press(key):
     if not hasattr(key, 'name'):
         return
+    if key.name == 'f1':
+        _logger.info("F1 - 新版弓手 (BowmasterMapSeparate)")
+        bowmaster_map_separate_task.toggle()
     if key.name == 'f2':
         _logger.info("F2 - BowmasterTask")
         bowmaster_task.toggle()
@@ -440,9 +447,13 @@ def on_press(key):
     if key.name == 'f11':
         _logger.info("F11 - HelperTask")
         helper_task.toggle()
+    if key.name == 'f12':
+        _logger.info("F12 - 新版標賊 (NightLordMapSeparate)")
+        night_lord_map_separate_task.toggle()
 
 
 # ── 初始化 Tasks ─────────────────────────────────────────────
+bowmaster_map_separate_task = BowmasterMapSeparate()
 bowmaster_task   = BowmasterTask()
 support_bot_task = SupportBot()
 archbishop_task  = Archbishop()
@@ -451,7 +462,8 @@ live_archbishop_task = LiveArchbishop()
 night_lord_101_task = NightLord101()
 map_test_task    = MapTestTask()   # 初始化時自動載入最新地圖
 lab102room_task  = Lab102RoomTask()
-helper_task      = HelperTask()
+helper_task                  = HelperTask()
+night_lord_map_separate_task = NightLordMapSeparate()
 
 config = load_config()
 

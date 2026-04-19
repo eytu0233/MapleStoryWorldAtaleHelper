@@ -65,6 +65,106 @@ class MinimapTask(MapleTask):
         self._pos_events: list[tuple[int, Callable[[float, float], bool], bool, Callable[[], None]]] = []
         self._next_event_id: int = 0
 
+        # 角色銀幕座標換算（由 load_char_pos_config 載入）
+        self._layers: list[dict] = []
+        self._screen_x_params: dict = {}
+        self._screen_y_params: dict = {}
+        self._char_facing: str = 'right'
+        self._char_y_direction: str = 'down'
+
+    # ── 角色銀幕座標換算 ─────────────────────────────────────────
+
+    def load_char_pos_config(self, config: dict):
+        """
+        從地圖 JSON 載入角色銀幕座標換算參數。
+
+        config 預期包含：
+            layers         : list[{id, map_y, map_x_min, map_x_max}]
+            char_screen_x  : {facing_left/facing_right: {base_x, left_transition, right_transition}}
+            char_screen_y  : {default_direction, up, down}
+        """
+        self._layers         = config.get('layers', [])
+        self._screen_x_params = config.get('char_screen_x', {})
+        self._screen_y_params = config.get('char_screen_y', {})
+        self._char_y_direction = self._screen_y_params.get('default_direction', 'down')
+        _logger.info(f'[MinimapTask] 載入角色銀幕座標換算參數：{len(self._layers)} 層')
+
+    @property
+    def char_facing(self) -> str:
+        return self._char_facing
+
+    @char_facing.setter
+    def char_facing(self, value: str):
+        self._char_facing = value
+
+    @property
+    def char_y_direction(self) -> str:
+        return self._char_y_direction
+
+    @char_y_direction.setter
+    def char_y_direction(self, value: str):
+        """設定垂直移動方向：'up'（往高層移動）或 'down'（往低層移動）。"""
+        self._char_y_direction = value
+
+    def _get_current_layer(self, map_y: float) -> dict | None:
+        """依目前 map_y 找最近的層。"""
+        if not self._layers:
+            return None
+        return min(self._layers, key=lambda l: abs(l['map_y'] - map_y))
+
+    def get_current_layer(self) -> dict | None:
+        """回傳目前 pos 對應的層設定（公開介面）。"""
+        return self._get_current_layer(self.pos[1])
+
+    @property
+    def char_screen_x(self) -> int:
+        """
+        依目前 pos、char_facing 與地圖換算參數計算角色銀幕 X（像素）。
+        尚未載入 config 時回傳 0。
+
+        換算公式（三段式）：
+          [map_x_min, left_transition)  → base_x 的線性成長
+          [left_transition, right_transition] → 固定 base_x
+          (right_transition, map_x_max]  → base_x + (screen_w - base_x) 的線性成長
+        """
+        if not self._screen_x_params or not self.game_window or not self.game_window.is_valid:
+            return 0
+        map_x, map_y = self.pos
+        layer = self._get_current_layer(map_y)
+        if layer is None:
+            return 0
+        x_min       = layer['map_x_min']
+        x_max       = layer['map_x_max']
+        params      = self._screen_x_params.get('facing_' + self._char_facing, {})
+        base_x      = params.get('base_x', 0)
+        left_trans  = params.get('left_transition', x_min)
+        right_trans = params.get('right_transition', x_max)
+        screen_w    = self.game_window.width
+
+        if map_x < left_trans:
+            denom = left_trans - x_min
+            if denom <= 0:
+                return 0
+            return int(base_x * (map_x - x_min) / denom)
+        elif map_x <= right_trans:
+            return base_x
+        else:
+            denom = x_max - right_trans
+            if denom <= 0:
+                return base_x
+            t = (map_x - right_trans) / denom
+            return int(base_x + (screen_w - base_x) * t)
+
+    @property
+    def char_screen_y(self) -> int:
+        """
+        依 char_y_direction 回傳角色銀幕 Y（像素）。
+        尚未載入 config 時回傳 0。
+        """
+        if not self._screen_y_params:
+            return 0
+        return self._screen_y_params.get(self._char_y_direction, 0)
+
     # ── 邊界設定 ─────────────────────────────────────────────────
 
     def set_bounds(self, rx0: float, ry0: float, rx1: float, ry1: float):

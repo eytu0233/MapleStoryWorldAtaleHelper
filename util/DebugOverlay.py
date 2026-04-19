@@ -112,10 +112,12 @@ class DebugOverlay:
                 self.window.geometry(f"{ww}x{wh}+{wx}+{wy}")
                 self.canvas.delete("all")
 
-                # ── 標題 ─────────────────────────────────────────
+                # ── 標題（自動顯示 active character）────────────
+                active = GameCharacter._active_instance
+                active_name = active.name if active is not None else '（無任務執行中）'
                 self.canvas.create_text(
                     ww // 2, 14,
-                    text=f"Debug — {self.character.name}",
+                    text=f"Debug — {self.character.name}   ▶ 執行中：{active_name}",
                     fill='yellow', font=('Arial', 11, 'bold')
                 )
 
@@ -197,8 +199,10 @@ class DebugOverlay:
                 self._draw_region(ww, wh, _CURSE_SCAN_REGION, '#cc44ff', '詛咒偵測範圍')
 
                 # ── ModelController 怪物偵測框 ────────────────────
-                if hasattr(self.character, '_monster_detections'):
-                    for det in self.character._monster_detections:
+                det_source = active if active is not None and hasattr(active, '_monster_detections') \
+                             else self.character
+                if hasattr(det_source, '_monster_detections'):
+                    for det in det_source._monster_detections:
                         x1, y1, x2, y2 = det['bbox']
                         cx = int((x1 + x2) / 2)
                         cy = int((y1 + y2) / 2)
@@ -212,11 +216,12 @@ class DebugOverlay:
                             fill='#ff8800', font=('Arial', 8, 'bold'), anchor='sw'
                         )
 
-                # ── ModelController 角色位置標記 ──────────────────
-                char_cx = getattr(self.character, '_char_screen_cx', 0)
-                char_cy = getattr(self.character, '_char_screen_cy', 0)
+                # ── 人物銀幕位置（由 minimap_task 換算）─────────
+                char_cx = mt.char_screen_x
+                char_cy = mt.char_screen_y
                 if char_cx > 0 and char_cy > 0:
-                    r = 6
+                    r = 8
+                    # 十字準心
                     self.canvas.create_line(
                         char_cx - r, char_cy, char_cx + r, char_cy,
                         fill='#00ff88', width=2
@@ -225,14 +230,24 @@ class DebugOverlay:
                         char_cx, char_cy - r, char_cx, char_cy + r,
                         fill='#00ff88', width=2
                     )
-                    layer = getattr(self.character, '_char_layer', None)
-                    mx = getattr(self.character, 'map_x', None)
-                    my = getattr(self.character, 'map_y', None)
-                    label = f"x={char_cx} y={char_cy}"
-                    if layer is not None and mx is not None and my is not None:
-                        label += f"  [{layer}] map({mx:.2f}, {my:.2f})"
+                    self.canvas.create_oval(
+                        char_cx - 3, char_cy - 3,
+                        char_cx + 3, char_cy + 3,
+                        fill='#00ff88', outline='white', width=1
+                    )
+                    # 資訊標籤
+                    facing    = mt.char_facing
+                    y_dir     = mt.char_y_direction
+                    layer_cfg = mt.get_current_layer()
+                    layer_id  = layer_cfg['id'] if layer_cfg else '?'
+                    mx, my    = mt.pos
+                    label     = (
+                        f"人物  x={char_cx}  y={char_cy}"
+                        f"   朝向={facing}  y方向={y_dir}"
+                        f"   層={layer_id}  map({mx:.2f}, {my:.2f})"
+                    )
                     self.canvas.create_text(
-                        char_cx + r + 2, char_cy,
+                        char_cx + r + 4, char_cy,
                         text=label,
                         fill='#00ff88', font=('Arial', 8, 'bold'), anchor='w'
                     )

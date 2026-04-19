@@ -134,6 +134,105 @@ uv run python main.py
 
 ---
 
+### maps/\<MapName\>.json（多層地圖設定）
+
+多層地圖任務（如龍蛋 `map_dragon_nest.json`）除了基本的小地圖邊界外，還需設定角色銀幕座標換算參數，供怪物偵測方向判斷使用。
+
+#### 完整範例
+
+```json
+{
+  "minimap_bounds": {
+    "x": 0.00699,
+    "y": 0.1364,
+    "w": 0.13903,
+    "h": 0.17031
+  },
+  "layers": [
+    { "id": 1, "map_y": 0.36, "map_x_min": 0.43, "map_x_max": 0.86 },
+    { "id": 2, "map_y": 0.59, "map_x_min": 0.55, "map_x_max": 0.86 },
+    { "id": 3, "map_y": 0.82, "map_x_min": 0.15, "map_x_max": 0.86 }
+  ],
+  "char_screen_x": {
+    "facing_left":  { "base_x": 1247, "left_transition": 0.45, "right_transition": 0.54 },
+    "facing_right": { "base_x": 1360, "left_transition": 0.46, "right_transition": 0.58 }
+  },
+  "char_screen_y": {
+    "default_direction": "down",
+    "up":   950,
+    "down": 1050
+  }
+}
+```
+
+#### `minimap_bounds`
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `x` / `y` | float | 小地圖左上角在遊戲視窗的比例座標（0.0～1.0） |
+| `w` / `h` | float | 小地圖的寬高比例 |
+
+#### `layers`（各層座標範圍）
+
+每個物件代表地圖中的一個平台層，`MinimapTask` 會根據角色目前的 `map_y` 找最近的層，決定該層的 x 邊界供銀幕座標換算使用。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `id` | int | 層編號（僅供識別，由上往下遞增） |
+| `map_y` | float | 該層在小地圖上的 y 比例座標（0.0＝最上層） |
+| `map_x_min` | float | 該層的小地圖 x 左邊界 |
+| `map_x_max` | float | 該層的小地圖 x 右邊界 |
+
+#### `char_screen_x`（角色銀幕 X 換算）
+
+角色在銀幕上的 X 座標並非線性對應小地圖 X，而是分三段換算。`facing_left` 與 `facing_right` 分別對應角色朝左與朝右時的參數。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `base_x` | int | 中段固定區間的角色銀幕 X（像素），即鏡頭跟隨時角色的銀幕基準位置 |
+| `left_transition` | float | 左轉換點（小地圖 x 比例）。角色在此點左側時銀幕 X 線性縮小 |
+| `right_transition` | float | 右轉換點（小地圖 x 比例）。角色在此點右側時銀幕 X 線性增大 |
+
+**三段換算規則：**
+
+```
+小地圖 x 落在以下區間時，角色銀幕 X＝
+  [map_x_min,   left_transition)   →  base_x × (map_x - map_x_min) / (left_transition - map_x_min)
+  [left_transition, right_transition]  →  base_x（固定，鏡頭跟隨中）
+  (right_transition, map_x_max]   →  base_x + (銀幕寬度 - base_x) × (map_x - right_transition) / (map_x_max - right_transition)
+```
+
+直觀說明：角色靠近地圖左邊界時，鏡頭貼著左牆不動，角色在銀幕上偏左；靠近右邊界時對稱；中間大部分區域鏡頭跟著角色移動，角色固定在銀幕中央附近。
+
+#### `char_screen_y`（角色銀幕 Y）
+
+角色在銀幕上的 Y 座標只有兩種狀態，取決於垂直移動方向（往高樓層移動時角色在銀幕偏上，往低樓層時偏下）。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `default_direction` | string | 任務啟動時的預設方向，`"up"` 或 `"down"` |
+| `up` | int | 往高樓層移動時角色銀幕 Y（像素），需在遊戲中實測後填入 |
+| `down` | int | 往低樓層移動時角色銀幕 Y（像素），需在遊戲中實測後填入 |
+
+> **校正方式**：在遊戲中開啟 DebugOverlay，觀察角色名字邊框的 Y 座標，分別在換層向上、向下移動時記錄數值填入。
+
+#### 如何在任務中更新方向
+
+任務程式碼中需主動更新 `MinimapTask` 的方向狀態：
+
+```python
+# 角色轉向時（左右攻擊、移動）
+self.minimap_task.char_facing = 'left'   # 或 'right'
+
+# 角色換層時
+self.minimap_task.char_y_direction = 'up'    # 往高層移動
+self.minimap_task.char_y_direction = 'down'  # 往低層移動
+```
+
+更新後，`GameCharacter.screen_x` / `screen_y` 會自動依公式重算，供怪物偵測範圍判斷使用。
+
+---
+
 ## 常用指令
 
 ```bash
