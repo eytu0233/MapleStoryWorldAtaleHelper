@@ -16,6 +16,7 @@ dependencies = [
     "websockets",
     "PyQt5",
     "discord.py",
+    "ultralytics>=8.4.19",
 ]
 
 [project.optional-dependencies]

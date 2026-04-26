@@ -10,12 +10,16 @@ from util.logger import MSLogger
 
 _logger = MSLogger('BowmasterTask')
 
-SKILL1_INTERVAL = 120
+SKILL1_INTERVAL = 300
 SKILL2_INTERVAL = 60
+SKILL3_INTERVAL = 300
+SKILL4_INTERVAL = 180
 MOVE_INTERVAL   = 90
-STEP_INTERVAL   = 15     # 攻擊開始後幾秒觸發一次移動
+STEP_INTERVAL   = 16     # 每幾秒強制巡邏一次（週期計時）
+DRIFT_INTERVAL  = 8      # 攻擊開始後幾秒往左飄移
+DRIFT_DURATION  = 0.4    # 往左飄移持續秒數
 
-_STEP_X_LEFT  = 0.98    # 右邊界
+_STEP_X_LEFT  = 0.84    # 右邊界
 _STEP_X_RIGHT = 0.66    # 左邊界
 _STEP_POLL    = 0.1     # 移動按鍵間隔（秒）
 
@@ -27,6 +31,7 @@ class State(Enum):
     MOVE = auto()
     STEP = auto()
     AUX = auto()
+    DRIFT = auto()
 
 
 class BowmasterTask(GameCharacter):
@@ -35,10 +40,11 @@ class BowmasterTask(GameCharacter):
         self.skill_ref_time = 0
         self.last_skill1 = 0
         self.last_skill2 = 0
-        self._step_dir = 'left'
         self._event_queue: deque = deque()
         self._timer_stop = threading.Event()
+        self._step_pending = False
         self._step_gen = 0
+        self._drift_gen = 0
 
     def move(self, direction: str) -> bool:
         return self._hold_key(direction, 1.5)
@@ -48,6 +54,7 @@ class BowmasterTask(GameCharacter):
 
     def _start_aux_timers(self):
         self._timer_stop.clear()
+        self._step_pending = False
 
         def timer_loop(interval, state, aux_skill):
             while not self._timer_stop.wait(interval):
@@ -57,12 +64,14 @@ class BowmasterTask(GameCharacter):
         for interval, state, aux_skill in [
             (SKILL1_INTERVAL, State.AUX,  1),
             (SKILL2_INTERVAL, State.AUX,  2),
+            (SKILL3_INTERVAL, State.AUX,  3),
+            (SKILL4_INTERVAL, State.AUX,  4),
             (MOVE_INTERVAL,   State.MOVE, None),
         ]:
             threading.Thread(target=timer_loop, args=(interval, state, aux_skill), daemon=True).start()
 
     def _schedule_step(self):
-        """攻擊開始時呼叫，倒數 STEP_INTERVAL 秒後加入移動事件。"""
+        """巡邏完成後呼叫，倒數 STEP_INTERVAL 秒後觸發下一次巡邏。"""
         self._step_gen += 1
         gen = self._step_gen
         timer_stop = self._timer_stop
@@ -70,12 +79,27 @@ class BowmasterTask(GameCharacter):
         def fire():
             if not timer_stop.wait(STEP_INTERVAL) and self._step_gen == gen:
                 _logger.info("[BowmasterTask] Step timer fired")
-                self._event_queue.append((State.STEP, None))
+                self._step_pending = True
+
+        threading.Thread(target=fire, daemon=True).start()
+
+    def _schedule_drift(self):
+        """攻擊開始時呼叫，倒數 DRIFT_INTERVAL 秒後加入往左飄移事件。"""
+        self._drift_gen += 1
+        gen = self._drift_gen
+        timer_stop = self._timer_stop
+
+        def fire():
+            if not timer_stop.wait(DRIFT_INTERVAL) and self._drift_gen == gen:
+                _logger.info("[BowmasterTask] Drift timer fired")
+                self._event_queue.append((State.DRIFT, None))
 
         threading.Thread(target=fire, daemon=True).start()
 
     def _cancel_timers(self):
         self._step_gen += 1
+        self._drift_gen += 1
+        self._step_pending = False
         self._timer_stop.set()
 
     # --- InitState ---
@@ -100,9 +124,12 @@ class BowmasterTask(GameCharacter):
 
     # --- AttackState ---
 
-    def _attack_pre(self) -> bool:
+    def _attack_pre(self, arm_drift: bool = False) -> bool:
         _logger.info("[BowmasterTask] AttackState: pre")
-        self._schedule_step()
+        if arm_drift:
+            self._schedule_drift()
+        if self._hold_key('left', 0.05):
+            return True
         if self.wait_stop_event(0.5):
             return True
         pyautogui.keyDown('z')
@@ -133,47 +160,49 @@ class BowmasterTask(GameCharacter):
 
     # --- StepState ---
 
+    def _step_move_to(self, direction: str, condition) -> bool:
+        """
+        持續按住 direction 直到 condition(x, y) 成立或收到停止訊號。
+        Returns True 表示收到停止訊號。
+        """
+        stop_event = threading.Event()
+        mt = self.minimap_task
+        eid = mt.register_pos_event(condition, stop_event.set, once=True)
+        try:
+            while not stop_event.is_set():
+                if self._hold_key(direction, _STEP_POLL):
+                    return True
+        finally:
+            mt.unregister_pos_event(eid)
+        return False
+
     def _step_process(self) -> bool:
         """
-        在 0.66 ~ 0.98 之間巡邏。
-        - x >= 0.98 → 往左直到 x <= 0.66
-        - x <= 0.66 → 往右直到 x >= 0.98
-        - 其他      → 維持方向，直到碰到對應邊界
-        到達右邊界（x >= 0.98）後往左 0.2 秒再回攻擊。
+        巡邏：先往左走到左邊界，再往右走到右邊界。
 
         Returns:
             True 表示收到停止訊號（task 應結束）。
         """
         x = self.map_x
-        if x >= _STEP_X_LEFT:
-            self._step_dir = 'left'
-        elif x <= _STEP_X_RIGHT:
-            self._step_dir = 'right'
+        _logger.info(f"[BowmasterTask] StepState: start x={x:.3f}")
 
-        if self._step_dir == 'left':
-            stop_condition = lambda cx, cy: cx <= _STEP_X_RIGHT
-        else:
-            stop_condition = lambda cx, cy: cx >= _STEP_X_LEFT
-
-        stop_event = threading.Event()
-        mt = self.minimap_task
-        eid = mt.register_pos_event(stop_condition, stop_event.set, once=True)
-
-        _logger.info(f"[BowmasterTask] StepState: dir={self._step_dir} x={x:.3f}")
-        try:
-            while not stop_event.is_set():
-                if self._hold_key(self._step_dir, _STEP_POLL):
-                    return True
-        finally:
-            mt.unregister_pos_event(eid)
-
-        end_x = self.map_x
-        _logger.info(f"[BowmasterTask] StepState: done x={end_x:.3f}")
-        if end_x >= _STEP_X_LEFT:
-            _logger.info("[BowmasterTask] StepState: at right boundary, reversing left 0.2s")
-            if self._hold_key('left', 0.2):
+        if x > _STEP_X_RIGHT:
+            _logger.info("[BowmasterTask] StepState: move left to left boundary")
+            if self._step_move_to('left', lambda cx, cy: cx <= _STEP_X_RIGHT):
                 return True
+            _logger.info(f"[BowmasterTask] StepState: reached left boundary x={self.map_x:.3f}")
+
+        _logger.info("[BowmasterTask] StepState: move right to right boundary")
+        if self._step_move_to('right', lambda cx, cy: cx >= _STEP_X_LEFT):
+            return True
+        _logger.info(f"[BowmasterTask] StepState: done x={self.map_x:.3f}")
         return False
+
+    # --- DriftState ---
+
+    def _drift_process(self) -> bool:
+        _logger.info("[BowmasterTask] DriftState: move left 1s")
+        return self._hold_key('left', DRIFT_DURATION)
 
     # --- AuxState ---
 
@@ -185,10 +214,16 @@ class BowmasterTask(GameCharacter):
             if self._hold_key('1', 1):
                 return True
             self.last_skill1 = time.time()
-        else:
+        elif skill == 2:
             if self._hold_key('2', 1):
                 return True
             self.last_skill2 = time.time()
+        elif skill == 3:
+            if self._hold_key('3', 1):
+                return True
+        else:
+            if self._hold_key('alt', 1):
+                return True
         return False
 
     # --- State machine runner ---
@@ -208,18 +243,27 @@ class BowmasterTask(GameCharacter):
             _logger.info("BowmasterTask end")
             return
 
+        self._schedule_step()   # 任務啟動後 16 秒觸發首次巡邏
+
         state = State.ATTACK
         aux_skill = None
+        arm_drift = True   # 首次進入 ATTACK 時排程 drift；STEP 完成後重新啟用
 
         while True:
             if state == State.ATTACK:
-                if self._attack_pre():
+                if self._attack_pre(arm_drift=arm_drift):
                     break
+                arm_drift = False   # 排程後關閉，直到下次 STEP 完成
 
                 stopped = False
                 while True:
                     if self.wait_stop_event(Z_CHECK_CHUNK):
                         stopped = True
+                        break
+                    if self._step_pending:
+                        self._step_pending = False
+                        state, aux_skill = State.STEP, None
+                        _logger.info("[BowmasterTask] AttackState: → STEP (forced)")
                         break
                     if self._event_queue:
                         state, aux_skill = self._event_queue.popleft()
@@ -241,7 +285,15 @@ class BowmasterTask(GameCharacter):
             elif state == State.STEP:
                 if self._step_process():
                     break
+                self._schedule_step()  # 巡邏完成後才開始計算下一次
                 state, aux_skill = State.ATTACK, None
+                arm_drift = True   # 巡邏完成，下次 ATTACK 重新排程 drift
+
+            elif state == State.DRIFT:
+                if self._drift_process():
+                    break
+                state, aux_skill = State.ATTACK, None
+                # arm_drift 不重設，drift 在下次巡邏前不再觸發
 
             elif state == State.AUX:
                 if self._aux_process(aux_skill):
