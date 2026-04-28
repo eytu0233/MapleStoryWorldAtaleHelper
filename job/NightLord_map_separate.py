@@ -2,6 +2,7 @@ import json
 import os
 import queue
 import threading
+import time
 
 import pyautogui
 
@@ -12,19 +13,16 @@ from util.logger import MSLogger
 
 _logger = MSLogger('NightLordMapSeparate')
 
-_BUFF_INTERVAL          = 270   # 秒
-_LEFT_X                 = 0.46  # 左邊界
-_CENTER_X               = 0.63  # 中間觀察點
-_RIGHT_X                = 0.80  # 右邊界
-_X_TOL                  = 0.02
-_MAP_CONFIG             = os.path.join(os.path.dirname(__file__), '..', 'maps', 'map_dragon_nest.json')
-_MONSTER_MODEL          = os.path.join(os.path.dirname(__file__), '..', 'model', 'egg_dragon.pt')
-_MONSTER_DETECT_NAMES   = {'eggDragon', 'eggDragon01'}
-_ATTACK_RANGE_PX        = 600   # 方向前方怪物偵測距離（視窗像素）
-_ATTACK_RANGE_Y         = 200   # 垂直方向誤差容許值（像素，±）
-_MULTI_ATTACK_THRESHOLD = 2     # 怪物數量 >= 此值時改用多體攻擊（z 鍵）
-_NO_MONSTER_TIMEOUT     = 3.0   # 秒：優先方向無怪後移往對應邊界
-_FORCE_MOVE_INTERVAL    = 60    # 秒：強制移往邊界（不論有無怪）
+_BUFF_INTERVAL        = 270   # 秒
+_LEFT_X               = 0.46  # 左邊界
+_RIGHT_X              = 0.86  # 右邊界
+_X_TOL                = 0.02
+_MAP_CONFIG           = os.path.join(os.path.dirname(__file__), '..', 'maps', 'map_dragon_nest.json')
+_MONSTER_MODEL        = os.path.join(os.path.dirname(__file__), '..', 'model', 'egg_dragon.pt')
+_MONSTER_DETECT_NAMES = {'eggDragon', 'eggDragon01'}
+_ATTACK_RANGE_PX          = 650   # 方向前方怪物偵測距離（視窗像素）
+_ATTACK_RANGE_Y           = 200   # 垂直方向誤差容許值（像素，±）
+_CONTINUOUS_ATTACK_LIMIT  = 20.0  # 秒：連續攻擊超過此時間後強制巡邏
 
 
 # ── Buff ──────────────────────────────────────────────────────────
@@ -38,12 +36,12 @@ class _Buff(Command):
 
     def trigger_command(self):
         self.interrupt_event.clear()
-        _logger.info(f'[PRIORITY][{type(self).__name__}] 施放 key={self._key}')
+        _logger.info(f'[{type(self).__name__}] 施放 key={self._key}')
         pyautogui.keyDown(self._key)
         interrupted = self.interrupt_event.wait(0.6)
         pyautogui.keyUp(self._key)
         if interrupted:
-            _logger.info(f'[PRIORITY][{type(self).__name__}] 被打斷')
+            _logger.info(f'[{type(self).__name__}] 被打斷')
 
 
 class Buff1(_Buff):
@@ -58,89 +56,17 @@ class Buff3(_Buff):
 
 # ── Attack ────────────────────────────────────────────────────────
 
+
 class AttackCommand(Command):
     """
-    攻擊指令。方向由中間點決定後鎖定，不在此處更改。
-    每次 0.4 秒攻擊後自我重入隊，直到被外部打斷為止。
+    前方優先攻擊；前方無怪時後方有怪則轉向攻擊；
+    完全無怪則立即觸發 MoveCommand 巡邏，自身不重入隊。
+    MoveCommand 到達對面邊界後會重新排入 AttackCommand。
     """
 
-    _queued:     'AttackCommand | None' = None
-    _is_running: bool                   = False
-
-    @classmethod
-    def _try_enqueue(cls, priority_queue: queue.Queue,
-                     char: 'NightLord', direction: str, attack_key: str):
-        if cls._queued is not None or cls._is_running:
-            return False
-        obj = cls(priority_queue, char, direction, attack_key)
-        cls._queued = obj
-        priority_queue.put(obj)
-        return True
-
-    def __init__(self, priority_queue: queue.Queue, char: 'NightLord',
-                 direction: str, attack_key: str):
-        super().__init__(CommandType.CONDITION)
-        self._queue      = priority_queue
-        self._char       = char
-        self._direction  = direction
-        self._attack_key = attack_key
-        self._cancelled  = False
-
-    def release(self):
-        self._cancelled = True
-
-    def _decide_attack_key(self) -> str:
-        cx = self._char.screen_x
-        cy = self._char.screen_y
-        if cx == 0:
-            return self._attack_key
-        total = 0
-        for d in self._char._monster_detections:
-            x1, y1, x2, y2 = d['bbox']
-            mcx = (x1 + x2) / 2
-            mcy = (y1 + y2) / 2
-            if abs(mcy - cy) <= _ATTACK_RANGE_Y:
-                if cx - _ATTACK_RANGE_PX <= mcx <= cx + _ATTACK_RANGE_PX:
-                    total += 1
-        return 'z' if total >= _MULTI_ATTACK_THRESHOLD else 'c'
-
-    def trigger_command(self):
-        AttackCommand._queued     = None
-        AttackCommand._is_running = True
-        try:
-            if self._cancelled:
-                return
-            self.interrupt_event.clear()
-
-            self._char.minimap_task.char_facing = self._direction
-            pyautogui.keyDown(self._direction)
-            pyautogui.keyUp(self._direction)
-
-            _logger.info(f'[PRIORITY][AttackCommand] 攻擊 dir={self._direction} key={self._attack_key}')
-            pyautogui.keyDown(self._attack_key)
-            self.interrupt_event.wait(0.4)
-            pyautogui.keyUp(self._attack_key)
-
-            if self.interrupt_event.is_set() or self._cancelled:
-                _logger.info('[PRIORITY][AttackCommand] 被中斷，停止攻擊')
-                return
-
-            self._attack_key = self._decide_attack_key()
-            AttackCommand._queued = self
-            self._queue.put(self)
-        finally:
-            AttackCommand._is_running = False
-
-
-# ── Move ──────────────────────────────────────────────────────────
-
-class MoveToCenterCommand(Command):
-    """
-    移動到中間觀察點（_CENTER_X）。
-    到達後結束；被攻擊打斷則重新入隊繼續移動。
-    """
-
-    _queued: 'MoveToCenterCommand | None' = None
+    _queued:        'AttackCommand | None' = None
+    _no_monster_streak: int                = 0
+    _NO_MONSTER_THRESHOLD: int             = 10
 
     @classmethod
     def _try_enqueue(cls, q: queue.Queue, char: 'NightLord'):
@@ -152,102 +78,123 @@ class MoveToCenterCommand(Command):
 
     def __init__(self, q: queue.Queue, char: 'NightLord'):
         super().__init__(CommandType.CONDITION)
-        self._queue = q
+        self._queue            = q
+        self._char             = char
+        self._cancelled        = False
+        self._attack_start_ts: float | None = None
+
+    def release(self):
+        self._cancelled = True
+
+    def trigger_command(self):
+        AttackCommand._queued = None
+        if self._cancelled or self._char.stop_event.is_set():
+            return
+        self.interrupt_event.clear()
+
+        facing      = self._char.minimap_task.char_facing or 'right'
+        front_count = self._char._left_count if facing == 'left' else self._char._right_count
+
+        if front_count > 0:
+            AttackCommand._no_monster_streak = 0
+            _logger.info(f'[AttackCommand] 前方攻擊 dir={facing} count={front_count}')
+        else:
+            AttackCommand._no_monster_streak += 1
+            _logger.info(f'[AttackCommand] 無怪 streak={AttackCommand._no_monster_streak}/{AttackCommand._NO_MONSTER_THRESHOLD}')
+            if AttackCommand._no_monster_streak < AttackCommand._NO_MONSTER_THRESHOLD:
+                self.interrupt_event.wait(0.3)
+                if not self._cancelled and not self._char.stop_event.is_set():
+                    AttackCommand._queued = self
+                    self._queue.put(self)
+            else:
+                AttackCommand._no_monster_streak = 0
+                _logger.info(f'[AttackCommand] 連續 {AttackCommand._NO_MONSTER_THRESHOLD} 次無怪，觸發移動 dir={facing}')
+                MoveCommand._try_enqueue(self._char.priority_command_queue, self._char, facing)
+            return
+
+        if self._attack_start_ts is None:
+            self._attack_start_ts = time.time()
+
+        pyautogui.keyDown('c')
+        self.interrupt_event.wait(0.8)
+        pyautogui.keyUp('c')
+
+        if self.interrupt_event.is_set() or self._cancelled:
+            return
+
+        if time.time() - self._attack_start_ts >= _CONTINUOUS_ATTACK_LIMIT:
+            _logger.info(f'[AttackCommand] 連續攻擊超過 {_CONTINUOUS_ATTACK_LIMIT}s，觸發巡邏 dir={facing}')
+            MoveCommand._try_enqueue(self._char.priority_command_queue, self._char, facing)
+            return
+
+        if not self._char.stop_event.is_set():
+            AttackCommand._queued = self
+            self._queue.put(self)
+
+
+# ── Move ──────────────────────────────────────────────────────────
+
+class MoveToNearestBoundaryCommand(Command):
+    """啟動時移動到最近的左/右邊界，到達後轉向，由 AttackCommand 接手後續邏輯。"""
+
+    def __init__(self, char, q):
+        super().__init__(CommandType.CONDITION)
         self._char  = char
+        self._queue = q
 
     def release(self): pass
 
-    def _start_attack(self):
-        cx = self._char.screen_x
-        cy = self._char.screen_y
-        counts = {'left': 0, 'right': 0}
-        total = 0
-        if cx != 0:
-            for d in self._char._monster_detections:
-                x1, y1, x2, y2 = d['bbox']
-                mcx = (x1 + x2) / 2
-                mcy = (y1 + y2) / 2
-                if abs(mcy - cy) > _ATTACK_RANGE_Y:
-                    continue
-                if cx - _ATTACK_RANGE_PX <= mcx < cx:
-                    counts['left'] += 1
-                    total += 1
-                elif cx < mcx <= cx + _ATTACK_RANGE_PX:
-                    counts['right'] += 1
-                    total += 1
-
-        if counts['left'] > counts['right']:
-            direction = 'left'
-        elif counts['right'] > counts['left']:
-            direction = 'right'
-        else:
-            direction = self._char._preferred_dir or 'right'
-
-        self._char._preferred_dir = direction
-        attack_key = 'z' if total >= _MULTI_ATTACK_THRESHOLD else 'c'
-
-        _logger.info(
-            f'[MoveToCenterCommand] 攻擊方向={direction} key={attack_key} '
-            f'L={counts["left"]} R={counts["right"]}'
-        )
-
-        self._char._reset_no_monster_timer(direction)
-        self._char._reset_force_move_timer()
-        AttackCommand._try_enqueue(
-            self._char.priority_command_queue, self._char, direction, attack_key
-        )
-
     def trigger_command(self):
-        MoveToCenterCommand._queued = None
-        try:
-            self.interrupt_event.clear()
-            cur_x = self._char.map_x
-            if abs(cur_x - _CENTER_X) <= _X_TOL:
-                _logger.info('[MoveToCenterCommand] 已在中間位置')
-                self._start_attack()
-                return
+        self.interrupt_event.clear()
+        cur_x = self._char.map_x
+        if abs(cur_x - _LEFT_X) <= abs(cur_x - _RIGHT_X):
+            target_x = _LEFT_X
+            next_dir  = 'right'
+        else:
+            target_x = _RIGHT_X
+            next_dir  = 'left'
 
-            direction = 'right' if cur_x < _CENTER_X else 'left'
-            _logger.info(f'[MoveToCenterCommand] →{direction} cur={cur_x:.2f}')
-            self._char.minimap_task.char_facing = direction
+        direction = 'right' if cur_x < target_x else 'left'
+        self._char.minimap_task.char_facing = direction
 
-            reached = [False]
+        _logger.info(f'[MoveToNearest] cur={cur_x:.2f} →{direction}({target_x:.2f})')
 
-            def _on_reached():
-                reached[0] = True
-                self.interrupt_command()
+        reached = [False]
 
-            eid = self._char.minimap_task.register_pos_event(
-                condition=lambda x, y: abs(x - _CENTER_X) <= _X_TOL,
-                callback=_on_reached,
-                once=True,
-            )
-            pyautogui.keyDown(direction)
-            self.interrupt_event.wait(15)
-            pyautogui.keyUp(direction)
-            self._char.minimap_task.unregister_pos_event(eid)
+        def _on_reached():
+            reached[0] = True
+            self.interrupt_command()
 
-            if self._char.stop_event.is_set():
-                return
+        eid = self._char.minimap_task.register_pos_event(
+            condition=lambda x, y: abs(x - target_x) <= _X_TOL,
+            callback=_on_reached,
+            once=True,
+        )
+        pyautogui.keyDown(direction)
+        self.interrupt_event.wait(15)
+        pyautogui.keyUp(direction)
+        self._char.minimap_task.unregister_pos_event(eid)
 
-            if not reached[0]:
-                _logger.warning('[MoveToCenterCommand] 被打斷或超時，重試')
-                MoveToCenterCommand._try_enqueue(self._queue, self._char)
-                return
+        if self._char.stop_event.is_set():
+            return
 
-            _logger.info(f'[MoveToCenterCommand] 到達中間 x={self._char.map_x:.2f}，決定攻擊方向')
-            self._start_attack()
-        finally:
-            MoveToCenterCommand._queued = None
+        if not reached[0]:
+            _logger.warning('[MoveToNearest] 未到達邊界（超時），重試')
+            self._queue.put(MoveToNearestBoundaryCommand(self._char, self._queue))
+            return
+
+        self._char.minimap_task.char_facing = next_dir
+        pyautogui.keyDown(next_dir)
+        self.interrupt_event.wait(0.5)
+        pyautogui.keyUp(next_dir)
+
+        _logger.info(f'[MoveToNearest] 到達 x={self._char.map_x:.2f}，轉向→{next_dir}')
 
 
-class MoveToSideCommand(Command):
-    """
-    移動到指定邊界（_LEFT_X 或 _RIGHT_X）後回到中間觀察點。
-    被攻擊打斷則重新入隊繼續移動。
-    """
+class MoveCommand(Command):
+    """巡邏：移動到對面邊界，到達後轉向並排入 AttackCommand 繼續攻擊。"""
 
-    _queued: 'MoveToSideCommand | None' = None
+    _queued: 'MoveCommand | None' = None
 
     @classmethod
     def _try_enqueue(cls, q: queue.Queue, char: 'NightLord', direction: str):
@@ -266,11 +213,13 @@ class MoveToSideCommand(Command):
     def release(self): pass
 
     def trigger_command(self):
-        MoveToSideCommand._queued = None
+        MoveCommand._queued = None
         try:
             self.interrupt_event.clear()
             target_x = _LEFT_X if self._direction == 'left' else _RIGHT_X
-            _logger.info(f'[MoveToSideCommand] →{self._direction} target={target_x:.2f}')
+            next_dir  = 'right' if self._direction == 'left' else 'left'
+
+            _logger.info(f'[MoveCommand] →{self._direction} target={target_x:.2f}')
             self._char.minimap_task.char_facing = self._direction
 
             reached = [False]
@@ -293,14 +242,19 @@ class MoveToSideCommand(Command):
                 return
 
             if not reached[0]:
-                _logger.warning(f'[MoveToSideCommand] 被打斷或超時，重試')
-                MoveToSideCommand._try_enqueue(self._queue, self._char, self._direction)
+                _logger.warning('[MoveCommand] 被打斷或超時，重試')
+                MoveCommand._try_enqueue(self._queue, self._char, self._direction)
                 return
 
-            _logger.info(f'[MoveToSideCommand] 到達邊界 x={self._char.map_x:.2f}，回中間')
-            MoveToCenterCommand._try_enqueue(self._queue, self._char)
+            self._char.minimap_task.char_facing = next_dir
+            pyautogui.keyDown(next_dir)
+            self.interrupt_event.wait(0.5)
+            pyautogui.keyUp(next_dir)
+
+            _logger.info(f'[MoveCommand] 到達 x={self._char.map_x:.2f}，轉向→{next_dir}，排入攻擊')
+            AttackCommand._try_enqueue(self._char.command_queue, self._char)
         finally:
-            MoveToSideCommand._queued = None
+            MoveCommand._queued = None
 
 
 # ── NightLord ─────────────────────────────────────────────────────
@@ -309,93 +263,28 @@ class NightLord(CommandGameCharacter):
 
     def __init__(self):
         super().__init__(name='NightLord')
-        self._monster_monitor:    ModelController | None     = None
-        self._monster_detections: list[dict]                 = []
-        self._preferred_dir:      str | None                 = None
-        self._no_monster_timer:   threading.Timer | None     = None
-        self._force_move_timer:   threading.Timer | None     = None
-
-    # ── 怪物方向偏好 & 無怪計時器 ─────────────────────────────────
-
-    def _reset_no_monster_timer(self, direction: str):
-        """每次在 direction 方向偵測到怪物時呼叫，重設 5 秒倒數。"""
-        if self._no_monster_timer is not None:
-            self._no_monster_timer.cancel()
-        if self.stop_event.is_set():
-            return
-        t = threading.Timer(_NO_MONSTER_TIMEOUT, self._on_no_monster_timeout, args=(direction,))
-        t.daemon = True
-        t.start()
-        self._no_monster_timer = t
-
-    def _reset_force_move_timer(self):
-        if self._force_move_timer is not None:
-            self._force_move_timer.cancel()
-        if self.stop_event.is_set():
-            return
-        t = threading.Timer(_FORCE_MOVE_INTERVAL, self._on_force_move_timeout)
-        t.daemon = True
-        t.start()
-        self._force_move_timer = t
-
-    def _interrupt_attack_and_move(self, direction: str):
-        if AttackCommand._queued is not None:
-            AttackCommand._queued._cancelled = True
-            AttackCommand._queued = None
-        if (self.current_command is not None
-                and isinstance(self.current_command, AttackCommand)):
-            self.current_command.interrupt_command()
-        MoveToSideCommand._try_enqueue(self.command_queue, self, direction)
-
-    def _on_force_move_timeout(self):
-        self._force_move_timer = None
-        if self.stop_event.is_set():
-            return
-        direction = self._preferred_dir or 'right'
-        _logger.info(f'[NightLord] 1 分鐘強制移動，方向={direction}')
-        self._interrupt_attack_and_move(direction)
-
-    def _on_no_monster_timeout(self, direction: str):
-        """_NO_MONSTER_TIMEOUT 秒後仍未見 direction 方向的怪：移往對應邊界。"""
-        self._no_monster_timer = None
-        if self.stop_event.is_set():
-            return
-        if self._preferred_dir != direction:
-            return
-        _logger.info(f'[NightLord] {direction} 方向 {_NO_MONSTER_TIMEOUT}s 無怪，移往邊界')
-        self._interrupt_attack_and_move(direction)
-
-    # ── ModelController callback ───────────────────────────────────
+        self._monster_monitor: ModelController | None = None
+        self._left_count:      int                    = 0
+        self._right_count:     int                    = 0
 
     def _on_monster_detected(self, detections: list[dict]):
         filtered = [d for d in detections if d['name'] in _MONSTER_DETECT_NAMES]
-        self._monster_detections = filtered
-
-        if not filtered or self._preferred_dir is None:
-            return
-
         cx = self.screen_x
         cy = self.screen_y
-        if cx == 0:
-            return
-
-        # 只統計鎖定方向的怪物數量，有怪才重置計時器
-        preferred_count = 0
-        for d in filtered:
-            x1, y1, x2, y2 = d['bbox']
-            mcx = (x1 + x2) / 2
-            mcy = (y1 + y2) / 2
-            if abs(mcy - cy) > _ATTACK_RANGE_Y:
-                continue
-            if self._preferred_dir == 'left' and cx - _ATTACK_RANGE_PX <= mcx < cx:
-                preferred_count += 1
-            elif self._preferred_dir == 'right' and cx < mcx <= cx + _ATTACK_RANGE_PX:
-                preferred_count += 1
-
-        if preferred_count > 0:
-            self._reset_no_monster_timer(self._preferred_dir)
-
-    # ── 初始化 ────────────────────────────────────────────────────
+        left_count = right_count = 0
+        if cx != 0:
+            for d in filtered:
+                x1, y1, x2, y2 = d['bbox']
+                mcx = (x1 + x2) / 2
+                mcy = (y1 + y2) / 2
+                if abs(mcy - cy) > _ATTACK_RANGE_Y:
+                    continue
+                if cx - _ATTACK_RANGE_PX <= mcx < cx:
+                    left_count += 1
+                elif cx < mcx <= cx + _ATTACK_RANGE_PX:
+                    right_count += 1
+        self._left_count  = left_count
+        self._right_count = right_count
 
     def _load_minimap_bounds(self):
         try:
@@ -415,26 +304,17 @@ class NightLord(CommandGameCharacter):
         self._buff_timer.daemon = True
         self._buff_timer.start()
 
-    # ── 生命週期 ──────────────────────────────────────────────────
-
     def stop(self):
         if hasattr(self, '_buff_timer'):
             self._buff_timer.cancel()
-        if self._no_monster_timer is not None:
-            self._no_monster_timer.cancel()
-            self._no_monster_timer = None
-        if self._force_move_timer is not None:
-            self._force_move_timer.cancel()
-            self._force_move_timer = None
         if self._monster_monitor is not None:
             self._monster_monitor.stop()
             self._monster_monitor = None
-        self._monster_detections = []
-        self._preferred_dir       = None
-        AttackCommand._queued     = None
-        AttackCommand._is_running = False
-        MoveToCenterCommand._queued = None
-        MoveToSideCommand._queued   = None
+        self._left_count                  = 0
+        self._right_count                 = 0
+        AttackCommand._queued             = None
+        AttackCommand._no_monster_streak  = 0
+        MoveCommand._queued               = None
         super().stop()
         for q in (self.emerg_command_queue, self.priority_command_queue, self.command_queue):
             while not q.empty():
@@ -447,34 +327,26 @@ class NightLord(CommandGameCharacter):
     def task_prepare(self):
         if hasattr(self, '_buff_timer'):
             self._buff_timer.cancel()
-        if self._no_monster_timer is not None:
-            self._no_monster_timer.cancel()
-            self._no_monster_timer = None
-        if self._force_move_timer is not None:
-            self._force_move_timer.cancel()
-            self._force_move_timer = None
 
         self._load_minimap_bounds()
 
-        # 重置所有狀態
-        AttackCommand._queued       = None
-        AttackCommand._is_running   = False
-        MoveToCenterCommand._queued = None
-        MoveToSideCommand._queued   = None
-        self._preferred_dir         = None
+        AttackCommand._queued            = None
+        AttackCommand._no_monster_streak = 0
+        MoveCommand._queued              = None
         self.minimap_task.char_facing      = 'right'
         self.minimap_task.char_y_direction = 'down'
 
-        # 啟動怪物偵測
         if self._monster_monitor is not None:
             self._monster_monitor.stop()
             self._monster_monitor = None
-        self._monster_detections = []
+        self._left_count  = 0
+        self._right_count = 0
         self._monster_monitor = ModelController(
             self.game_window, _MONSTER_MODEL, self._on_monster_detected
         )
         self._monster_monitor.start()
 
         self._enqueue_buffs()
-        # 初始移動到中間觀察點
-        MoveToCenterCommand._try_enqueue(self.command_queue, self)
+
+        self.priority_command_queue.put(MoveToNearestBoundaryCommand(self, self.priority_command_queue))
+        AttackCommand._try_enqueue(self.command_queue, self)

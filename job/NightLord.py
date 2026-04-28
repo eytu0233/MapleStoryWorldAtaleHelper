@@ -14,7 +14,7 @@ _BUFF_INTERVAL = 270   # 秒
 _LEFT_X        = 0.48
 _RIGHT_X       = 0.85
 _X_TOL         = 0.02
-_PATROL_DELAY  = 15    # 秒（到達邊界後等待再移動）
+_PATROL_DELAY  = 10    # 秒（到達邊界後等待再移動）
 _MAP_CONFIG    = os.path.join(os.path.dirname(__file__), '..', 'maps', 'map_dragon_nest.json')
 
 
@@ -65,9 +65,9 @@ class AttackCommand(Command):
         if self._cancelled:
             return
         self.interrupt_event.clear()
-        _logger.info('[AttackCommand] 攻擊開始 10s')
+        _logger.info('[AttackCommand] 攻擊開始 3s')
         pyautogui.keyDown('c')
-        self.interrupt_event.wait(10)
+        self.interrupt_event.wait(3)
         pyautogui.keyUp('c')
         if self.interrupt_event.is_set():
             _logger.info('[AttackCommand] 被打斷')
