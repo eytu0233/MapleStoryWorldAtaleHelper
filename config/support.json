@@ -1,6 +1,7 @@
 {
   "support": {
     "interval": 270,
+    "exit_confirm_wait_secs": 10,
     "buff_skills": [
       "1",
       "2",

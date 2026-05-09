@@ -16,7 +16,6 @@ _FREE_MARKET_FILE = 'config/free_market.json'
 _MINIMAP_Y_TOLERANCE   = 0.05   # 確認進入自由市場的 y 容差
 _FREE_MARKET_WAIT_SECS = 2.0    # 按下按鈕後等待確認的秒數
 _BUTTON_JITTER_PX      = 5      # 按鈕 x 隨機位移（像素）
-_EXIT_CONFIRM_WAIT_SECS = 1.5   # 按上鍵後等待畫面切換的秒數
 
 _logger = MSLogger('SupportBot')
 
@@ -197,9 +196,9 @@ class MoveToExitCommand(Command):
 
 # ── 在自由市場等待 ─────────────────────────────────────────────────
 
-class WaitInFreeMarketCommand(Command):
     """等待 interval 秒後離開自由市場。"""
 
+class WaitInFreeMarketCommand(Command):
     def __init__(self, char: 'SupportBot', q: queue.Queue, fm_cfg: dict):
         super().__init__(CommandType.CONDITION)
         self._char   = char
@@ -247,7 +246,7 @@ class ExitFreeMarketCommand(Command):
             return
 
         # 等待畫面切換
-        interrupted = self.interrupt_event.wait(_EXIT_CONFIRM_WAIT_SECS)
+        interrupted = self.interrupt_event.wait(self._char.exit_confirm_wait_secs)
         if interrupted:
             _logger.info('[ExitFM] 確認等待中被打斷')
             return
@@ -257,20 +256,12 @@ class ExitFreeMarketCommand(Command):
         actual_y = self._char.map_y
         _logger.info(f'[ExitFM] 確認位置 map_y={actual_y:.3f} target_y={target_y:.3f}')
 
-        if abs(actual_y - target_y) > _MINIMAP_Y_TOLERANCE:
-            # 成功離開自由市場
-            self._char.restore_minimap_bounds()
-            _logger.info('[ExitFM] 已離開自由市場，還原小地圖邊界，重新施放 buff')
-            self._queue.put(CastBuffsCommand(
-                self._char, self._queue,
-                self._char.buff_skills, self._fm_cfg
-            ))
-        else:
-            # 仍在自由市場，重新移到出口再試
-            _logger.warning(f'[ExitFM] 仍在自由市場 (map_y={actual_y:.3f})，重新移動到出口')
-            self._queue.put(MoveToExitCommand(
-                self._char, self._queue, self._fm_cfg, skip_wait=True
-            ))
+        self._char.restore_minimap_bounds()
+        _logger.info('[ExitFM] 已離開自由市場，還原小地圖邊界，重新施放 buff')
+        self._queue.put(CastBuffsCommand(
+            self._char, self._queue,
+               self._char.buff_skills, self._fm_cfg
+        ))
 
 
 # ── SupportBot 主類別 ──────────────────────────────────────────────
@@ -280,8 +271,9 @@ class SupportBot(CommandGameCharacter):
     def __init__(self):
         super().__init__(name='SupportBot')
         support_cfg, fm_cfg = _load_configs()
-        self.buff_skills: list[str] = support_cfg['buff_skills']
-        self.interval: int          = support_cfg['interval']
+        self.buff_skills: list[str]       = support_cfg['buff_skills']
+        self.interval: int                = support_cfg['interval']
+        self.exit_confirm_wait_secs: float = support_cfg['exit_confirm_wait_secs']
         self._fm_cfg: dict          = fm_cfg
         self._original_bounds: tuple | None = None
         self._buff_timer: threading.Timer | None = None
